@@ -18,9 +18,25 @@ const SignUp = () => {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const userData = localStorage.getItem('user');
-    if (userData) {
-      navigate('/dashboard'); // Redirect if already logged in
+    // Only redirect if we have valid token and user data, not just any 'user' key
+    const token = localStorage.getItem('token');
+    const userData = localStorage.getItem('userData');
+    
+    if (token && userData) {
+      try {
+        // Ensure userData is valid JSON
+        JSON.parse(userData);
+        navigate('/dashboard');
+      } catch (error) {
+        // Clean up invalid data
+        localStorage.removeItem('token');
+        localStorage.removeItem('userData');
+      }
+    }
+    
+    // Clean up legacy data if it exists
+    if (localStorage.getItem('user')) {
+      localStorage.removeItem('user');
     }
   }, [navigate]);
 
@@ -50,6 +66,13 @@ const SignUp = () => {
     setIsLoading(true);
 
     try {
+      console.log('Submitting registration with:', {
+        name: formData.name,
+        email: formData.email,
+        phoneNumber: formData.phoneNumber,
+        password: formData.password.substring(0, 1) + '...' // Log partial password for safety
+      });
+      
       const response = await api.post('/user/signup', {
         name: formData.name,
         email: formData.email,
@@ -57,17 +80,30 @@ const SignUp = () => {
         password: formData.password
       });
 
-      toast.success('Registration successful! Redirecting to login...', {
-        position: "top-center",
-        autoClose: 2000,
-      });
+      console.log('Registration response:', response.data);
+      
+      if (response.data.success) {
+        toast.success('Registration successful! Redirecting to login...', {
+          position: "top-center",
+          autoClose: 2000,
+        });
 
-      setTimeout(() => {
-        navigate('/auth/sign-in');
-      }, 2000);
+        // Add the user credentials to session storage for testing
+        // REMOVE IN PRODUCTION!
+        sessionStorage.setItem('last_registered_user', JSON.stringify({
+          email: formData.email,
+          password: formData.password
+        }));
+
+        setTimeout(() => {
+          navigate('/auth/sign-in');
+        }, 2000);
+      } else {
+        throw new Error(response.data.message || 'Registration failed');
+      }
     } catch (err) {
       console.error('Registration error:', err);
-      const errorMessage = err.response?.data?.message || 'Registration failed. Please try again.';
+      const errorMessage = err.response?.data?.message || err.message || 'Registration failed. Please try again.';
       setError(errorMessage);
       toast.error(errorMessage, { position: "top-top" });
     } finally {

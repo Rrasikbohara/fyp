@@ -3,8 +3,8 @@ import { api } from '../../services/api';
 import { toast, ToastContainer } from 'react-toastify';
 import { 
   HiRefresh, HiSearch, HiAdjustments, HiCheck, HiX, 
-  HiClock, HiCalendar, HiUserCircle, HiCurrencyDollar,
-  HiBriefcase, HiDotsVertical, HiChevronDown, HiChevronUp
+  HiClock, HiCalendar, HiUserCircle, HiCurrencyDollar,HiOutlineBookOpen,
+  HiBriefcase, HiDotsVertical, HiChevronDown, HiChevronUp, HiTrash,
 } from 'react-icons/hi';
 import { useAuth } from '../../contexts/AuthContext'; // Add this to import useAuth
 
@@ -35,22 +35,25 @@ const AdminBooking = () => {
         return;
       }
       
-      // Ensure token is present
-      const token = localStorage.getItem('adminToken') || localStorage.getItem('token');
-      if (!token) {
-        console.error('No admin token found');
+      // Get fresh admin token from localStorage
+      const adminToken = localStorage.getItem('adminToken');
+      if (!adminToken) {
+        console.error('No admin token found in localStorage');
         setError('Admin token not found. Please log in again.');
         toast.error('Authentication token missing');
         return;
       }
       
-      // Log auth details for debugging
-      console.log('Attempting to fetch admin bookings with role:', user?.role);
-      console.log('Admin auth state:', adminAuth);
+      console.log('Admin token found, length:', adminToken.length);
       
-      const response = await api.get('/bookings/admin');
+      // Make the request with explicit admin token
+      const response = await api.get('/bookings/admin', {
+        headers: {
+          'Authorization': `Bearer ${adminToken}`
+        }
+      });
       
-      console.log('Fetched gym bookings:', response.data);
+      console.log('Fetched gym bookings:', response.data.length || 0, 'bookings');
       
       // Process bookings to ensure consistent formatting
       const processedBookings = response.data.map(booking => {
@@ -75,8 +78,18 @@ const AdminBooking = () => {
       console.error('Error fetching bookings:', error);
       
       if (error.response?.status === 403) {
-        setError('Access denied. Admin privileges required.');
+        // Handle 403 error specifically
+        console.error('Admin access denied. Current auth state:', adminAuth);
+        setError('Access denied. Admin privileges required. Please login again with an admin account.');
         toast.error('Access denied. Admin privileges required.');
+        
+        // Clear invalid admin token
+        localStorage.removeItem('adminToken');
+        
+        // Refresh page after a short delay or redirect to admin login
+        setTimeout(() => {
+          window.location.href = '/admin/sign-in';
+        }, 3000);
       } else {
         setError('Failed to load bookings. Please try again.');
         toast.error('Error fetching bookings');
@@ -151,16 +164,37 @@ const AdminBooking = () => {
   const handleStatusChange = async (id, status) => {
     try {
       setStatusUpdating(id);
-      await api.patch(`/bookings/${id}/status`, { status });
       
-      setBookings(bookings.map(booking => 
-        booking._id === id ? { ...booking, status } : booking
-      ));
+      // Make sure we're using admin token for this request
+      const adminToken = localStorage.getItem('adminToken');
+      if (!adminToken) {
+        console.warn('No admin token found when trying to update booking status');
+        toast.error('Admin authentication required');
+        return;
+      }
       
-      toast.success(`Booking status updated to ${status}`);
+      // Use a direct configuration with the token to ensure it's used
+      const response = await api.patch(`/bookings/${id}/status`, 
+        { status },
+        { 
+          headers: { 
+            'Authorization': `Bearer ${adminToken}` 
+          } 
+        }
+      );
+      
+      if (response.data.success) {
+        setBookings(bookings.map(booking => 
+          booking._id === id ? { ...booking, status } : booking
+        ));
+        
+        toast.success(`Booking status updated to ${status}`);
+      } else {
+        throw new Error(response.data.message || 'Failed to update status');
+      }
     } catch (error) {
       console.error('Error updating status:', error);
-      toast.error('Failed to update booking status');
+      toast.error(error.response?.data?.message || 'Failed to update booking status');
     } finally {
       setStatusUpdating(null);
     }
@@ -185,6 +219,72 @@ const AdminBooking = () => {
       toast.error('Failed to update payment status');
     } finally {
       setStatusUpdating(null);
+    }
+  };
+  
+  // Add delete booking function
+  const handleDeleteBooking = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this booking?')) {
+      return;
+    }
+    
+    try {
+      setStatusUpdating(id);
+      
+      // Ensure admin is authenticated
+      const adminToken = localStorage.getItem('adminToken');
+      if (!adminToken) {
+        toast.error('Admin authentication required');
+        return;
+      }
+      
+      await api.delete(`/bookings/${id}`, {
+        headers: {
+          'Authorization': `Bearer ${adminToken}`
+        }
+      });
+      
+      // Remove booking from the list
+      setBookings(bookings.filter(booking => booking._id !== id));
+      toast.success('Booking deleted successfully');
+    } catch (error) {
+      console.error('Error deleting booking:', error);
+      toast.error('Failed to delete booking');
+    } finally {
+      setStatusUpdating(null);
+    }
+  };
+  
+  // Add bulk delete function for cancelled bookings
+  const handleDeleteAllCancelled = async () => {
+    if (!window.confirm('Are you sure you want to delete ALL cancelled bookings?')) {
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      
+      // Ensure admin is authenticated
+      const adminToken = localStorage.getItem('adminToken');
+      if (!adminToken) {
+        toast.error('Admin authentication required');
+        return;
+      }
+      
+      const response = await api.delete('/bookings/cancelled/all', {
+        headers: {
+          'Authorization': `Bearer ${adminToken}`
+        }
+      });
+      
+      // Refresh the bookings list
+      await fetchBookings();
+      toast.success(`${response.data.deletedCount || 'All'} cancelled bookings deleted`);
+    } catch (error) {
+      console.error('Error deleting cancelled bookings:', error);
+      toast.error('Failed to delete cancelled bookings');
+    } finally {
+      setLoading(false);
     }
   };
   
@@ -304,6 +404,14 @@ const AdminBooking = () => {
           >
             <HiRefresh className={loading ? "animate-spin" : ""} />
             Refresh
+          </button>
+          
+          <button 
+            onClick={handleDeleteAllCancelled}
+            className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100"
+          >
+            <HiTrash className="mr-1" />
+            Delete All Cancelled
           </button>
         </div>
       </div>
@@ -544,6 +652,15 @@ const AdminBooking = () => {
                                 {statusUpdating === booking._id ? 'Updating...' : 'Mark Paid'}
                               </button>
                             )}
+                            
+                            {/* Delete button - always available for admin */}
+                            <button
+                              onClick={() => handleDeleteBooking(booking._id)}
+                              disabled={statusUpdating === booking._id}
+                              className="px-3 py-1 bg-red-100 text-red-800 rounded-md hover:bg-red-200 disabled:opacity-50"
+                            >
+                              {statusUpdating === booking._id ? 'Processing...' : 'Delete Booking'}
+                            </button>
                           </div>
                         </td>
                       </tr>

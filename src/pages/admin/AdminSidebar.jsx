@@ -27,12 +27,7 @@ const AdminSidebar = ({ collapsed, onLinkClick }) => {
         }>
           <HiOutlineUserGroup className="mr-2 w-5 h-5" /> Trainer Bookings
         </NavLink>
-        {/* <NavLink to="/admin/equipment-bookings" onClick={onLinkClick} className={({ isActive }) => 
-          `flex items-center p-3 rounded-lg transition-colors ${isActive ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`
-        }>
-          <HiOutlineCollection className="mr-2 w-5 h-5" /> Equipment Bookings
-        </NavLink> */}
-      
+       
         <NavLink to="/admin/users" onClick={onLinkClick} className={({ isActive }) => 
           `flex items-center p-3 rounded-lg transition-colors ${isActive ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`
         }>

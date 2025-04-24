@@ -13,13 +13,37 @@ const ADMIN_DATA_KEY = 'adminData';
 export const AuthProvider = ({ children }) => {
   // Initialize state from localStorage to prevent unauthorized flashes
   const [user, setUser] = useState(() => {
-    const savedUser = localStorage.getItem('userData');
-    return savedUser ? JSON.parse(savedUser) : null;
+    try {
+      const token = localStorage.getItem('token');
+      const savedUser = localStorage.getItem('userData');
+      
+      // Only consider user logged in if BOTH token and userData exist
+      if (token && savedUser) {
+        const parsedUser = JSON.parse(savedUser);
+        // Validate user object has required fields
+        if (parsedUser && parsedUser._id && parsedUser.email) {
+          return parsedUser;
+        } else {
+          // Clean up invalid data
+          localStorage.removeItem('token');
+          localStorage.removeItem('userData');
+          return null;
+        }
+      }
+      return null;
+    } catch (error) {
+      console.error('Error initializing auth state:', error);
+      // Clean up if there's any error
+      localStorage.removeItem('token');
+      localStorage.removeItem('userData');
+      localStorage.removeItem('user'); // Remove legacy key if exists
+      return null;
+    }
   });
   
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    // Check if we have a valid token in localStorage
-    return !!localStorage.getItem('token');
+    // Only consider authenticated if both token and valid user data exist
+    return !!localStorage.getItem('token') && !!user;
   });
 
   const [loading, setLoading] = useState(true);
@@ -127,68 +151,97 @@ export const AuthProvider = ({ children }) => {
 
   // User login function - only affects user auth
   const login = (token, userData) => {
+    console.log('AuthContext: Login called with token and user data');
+    
+    if (!token || !userData) {
+      console.error('Login attempt with invalid data');
+      return false;
+    }
+    
+    // Store token and user data in localStorage
     localStorage.setItem('token', token);
     localStorage.setItem('userData', JSON.stringify(userData));
     
-    // Set the token in the API instance's default headers
+    // Set token in API headers
     api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     
+    // Update context state
     setUser(userData);
     setIsAuthenticated(true);
-    console.log('Auth context: User logged in', userData);
+    
+    console.log('AuthContext: User login successful');
+    return true;
   };
 
   // Admin login function - only affects admin auth
-  const adminLogin = (adminData, token) => {
-    try {
-      console.log('Setting up admin session with token');
-      
-      // First, make sure to save the token
-      localStorage.setItem(ADMIN_TOKEN_KEY, token);
-      
-      // Store admin data
-      localStorage.setItem(ADMIN_DATA_KEY, JSON.stringify(adminData));
-      
-      // Update state
-      setAdminUser(adminData);
-      setAdminAuth({
-        isAuthenticated: true,
-        loading: false
-      });
-      
-      return true;
-    } catch (error) {
-      console.error('Error during admin login:', error);
-      return false;
-    }
+  const adminLogin = (admin, token) => {
+    console.log('Admin login in context:', admin?.username);
+    setAdminAuth({
+      isAuthenticated: true,
+      admin,
+      token
+    });
+    
+    // Store token with consistent naming
+    if (token) localStorage.setItem('adminToken', token);
+    if (admin) localStorage.setItem('adminData', JSON.stringify(admin));
+    
+    // Log admin token length for debugging
+    console.log('Admin token stored, length:', token?.length || 0);
   };
+
+  // const adminLogout = () => {
+  //   console.log('Admin logout in context');
+  //   setAdminAuth({
+  //     isAuthenticated: false,
+  //     admin: null,
+  //     token: null
+  //   });
+    
+  //   // Clear admin storage
+  //   localStorage.removeItem('adminToken');
+  //   localStorage.removeItem('adminData');
+    
+  //   // Redirect to admin login
+  //   window.location.href = '/admin/sign-in';
+  // };
 
   // User logout function - only affects user auth
   const logout = () => {
-    // Clear all auth data
+    console.log('AuthContext: Logout called');
+    
+    // Clear auth data from localStorage
     localStorage.removeItem('token');
     localStorage.removeItem('userData');
     
     // Remove token from API headers
     delete api.defaults.headers.common['Authorization'];
     
+    // Update context state
     setUser(null);
     setIsAuthenticated(false);
-    console.log('Auth context: User logged out');
+    
+    console.log('AuthContext: User logged out');
   };
 
   // Admin logout function - only affects admin auth
   const adminLogout = () => {
-    // Clear admin auth data only
-    localStorage.removeItem(ADMIN_TOKEN_KEY);
-    localStorage.removeItem(ADMIN_DATA_KEY);
+    console.log('AuthContext: Admin logout called');
     
-    // Update state
-    setAdminUser(null);
+    // Clear admin auth data
+    localStorage.removeItem('adminToken');
+    localStorage.removeItem('adminData');
+    
+    // Remove token from API headers
+    delete api.defaults.headers.common['Authorization'];
+    
+    // Update admin auth state
     setAdminAuth({
-      isAuthenticated: false,
-      loading: false
+      admin: null,
+      isAuthenticated: false
     });
+    
+    console.log('AuthContext: Admin logged out');
   };
 
   return (

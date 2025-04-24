@@ -21,117 +21,133 @@ export const api = axios.create({
 const USER_TOKEN_KEY = 'userToken';
 const ADMIN_TOKEN_KEY = 'adminToken';
 
-// Enhanced request interceptor for adding the auth token to requests
+// Add a request interceptor to include authentication token
 api.interceptors.request.use(
   (config) => {
-    // Determine which token to use based on the endpoint being accessed
-    let token = null;
+    console.log('[API] Request to:', config.url);
     
-    // Special handling for authentication endpoints - don't add any token for signin endpoints
-    if (config.url.includes('/signin') || config.url.includes('/signup')) {
-      // Don't add any token for authentication endpoints
-      console.log(`[API] Not using token for auth endpoint: ${config.url}`);
+    // Skip auth for authentication endpoints
+    const authEndpoints = ['/user/signin', '/user/signup', '/admin/signin'];
+    
+    if (authEndpoints.some(endpoint => config.url.includes(endpoint))) {
+      console.log('[API] Not using token for auth endpoint:', config.url);
       return config;
     }
     
-    // Admin endpoints should use admin token
-    if (config.url.includes('/admin/') || config.url === '/bookings/admin') {
-      token = localStorage.getItem(ADMIN_TOKEN_KEY);
-      console.log(`[API] Using admin token for admin endpoint: ${config.url}`);
+    // Improved admin operation detection
+    const isAdminOperation = 
+      // Admin routes
+      config.url.includes('/admin') || 
+      // Admin-specific endpoints
+      config.url.includes('/bookings/admin') ||
+      config.url.includes('/trainers/admin') ||
+      // Booking operations from admin panel - both gym and trainer
+      ((config.url.includes('/bookings/') || config.url.includes('/trainers/bookings/')) && 
+       (config.url.includes('/status') || config.url.includes('/payment')));
+    
+    // Use the correct token based on the operation
+    let token;
+    
+    if (isAdminOperation) {
+      // For admin operations, try all possible admin token keys
+      token = localStorage.getItem(ADMIN_TOKEN_KEY) || 
+              localStorage.getItem('adminToken');
+      
+      console.log('[API] Using admin token for admin operation:', !!token, 'Length:', token?.length);
     } else {
-      // For user endpoints, use user token
-      token = localStorage.getItem(USER_TOKEN_KEY);
+      // For user operations, try all possible user token keys
+      token = localStorage.getItem(USER_TOKEN_KEY) || 
+              localStorage.getItem('token');
       
-      // Only fall back to admin token if explicitly needed for special cases
-      if (!token && config.headers['Use-Admin-Token']) {
-        token = localStorage.getItem(ADMIN_TOKEN_KEY);
-        console.log(`[API] Falling back to admin token with special header for: ${config.url}`);
-      }
+      console.log('[API] Using user token for request:', !!token);
+    }
+    
+    // Fallback mechanism if the specific token wasn't found
+    if (!token) {
+      console.log('[API] Primary token not found, trying fallback');
+      token = isAdminOperation 
+        ? (localStorage.getItem(USER_TOKEN_KEY) || localStorage.getItem('token'))
+        : (localStorage.getItem(ADMIN_TOKEN_KEY) || localStorage.getItem('adminToken'));
       
-      console.log(`[API] Using ${token ? 'user' : 'no'} token for request to ${config.url}`);
+      console.log('[API] Using fallback token:', !!token);
     }
     
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+      console.log('[API] Auth header set with token length:', token.length);
+    } else {
+      console.log('[API] WARNING: No token available for authenticated request');
     }
     
     return config;
   },
   (error) => {
-    console.error('API Request Error:', error);
     return Promise.reject(error);
   }
 );
 
-// Response interceptor for handling common errors
+// Add a response interceptor to handle errors
 api.interceptors.response.use(
   (response) => {
     return response;
   },
   (error) => {
-    console.log('API Error:', error.config || 'No config');
+    console.log('API Error:', error.config);
+    
+    // Log detailed error for payment and status updates
+    if (error.config && 
+        (error.config.url.includes('/payment') || error.config.url.includes('/status'))) {
+      console.error('Status/Payment update error details:', {
+        status: error.response?.status,
+        data: error.response?.data,
+        url: error.config?.url,
+        method: error.config?.method,
+        requestData: JSON.parse(error.config?.data || '{}')
+      });
+    }
     
     if (error.response) {
-      // Handle specific error cases
-      const status = error.response.status;
+      const { status, data } = error.response;
       
-      // Handle authentication errors
+      // Handle 401 Unauthorized errors (expired or invalid token)
       if (status === 401) {
-        if (error.config.url.includes('/admin/')) {
-          // Admin auth error
-          console.log('Admin authentication error - clearing admin token');
-          localStorage.removeItem(ADMIN_TOKEN_KEY);
-          
-          if (!error.config.url.includes('/signin')) {
-            toast.error('Admin session expired. Please log in again.');
-          }
-        } else {
-          // User auth error
-          console.log('User authentication error - clearing user token');
-          localStorage.removeItem(USER_TOKEN_KEY);
-          
-          if (!error.config.url.includes('/signin')) {
-            toast.error('Session expired. Please log in again.');
-          }
-        }
-      }
-      
-      // Handle server errors
-      if (status >= 500) {
-        toast.error('Server error. Please try again later.');
-      }
-    } else if (error.request) {
-      // Network error
-      toast.error('Network error. Please check your connection.');
-    }
-    
-    console.log('API error:', error);
-    return Promise.reject(error);
-  }
-);
-
-// Add response interceptor for error handling
-api.interceptors.response.use(
-  (response) => response,
-  (err) => { // Changed variable name from 'error' to 'err' for consistency
-    // Handle specific error codes
-    if (err.response) {
-      const { status } = err.response;
-      
-      // Handle 401 Unauthorized - could be expired token
-      if (status === 401) {
-        console.log('API 401 error - clearing auth tokens');
+        console.log('User authentication error - clearing user token');
         localStorage.removeItem('token');
         localStorage.removeItem('userData');
+      }
+      
+      // Handle 403 Forbidden errors for admin endpoints
+      if (status === 403 && error.config.url.includes('/admin/')) {
+        console.log('Admin authentication error - clearing admin token');
+        localStorage.removeItem('adminToken');
+        localStorage.removeItem('adminData');
+      }
+      
+      console.log('API error:', error);
+      
+      // For both 401 and 403 on API endpoints, clear relevant tokens
+      if ((status === 401 || status === 403) && error.config.url.includes('/api/')) {
+        console.log('API 401/403 error - clearing auth tokens');
         
-        // If on protected route, redirect to login
-        if (!window.location.pathname.includes('/auth/')) {
-          window.location.href = '/auth/sign-in';
+        // First check if it's an admin endpoint and clear admin token
+        if (error.config.url.includes('/admin/')) {
+          localStorage.removeItem('adminToken');
+          localStorage.removeItem('adminData');
+        } else {
+          // For user endpoints, clear user token
+          localStorage.removeItem('token');
+          localStorage.removeItem('userData');
+        }
+        
+        // For booking endpoints that might use admin auth, check both
+        if (error.config.url.includes('/bookings/')) {
+          localStorage.removeItem('adminToken');
+          localStorage.removeItem('token');
         }
       }
     }
     
-    return Promise.reject(err);
+    return Promise.reject(error);
   }
 );
 
@@ -156,7 +172,7 @@ export const getUserData = async () => {
     }
     
     // If not in localStorage, try to get from API
-    const response = await api.get('/user/me');
+    const response = await api.get('/user/profile');
     
     // Save to localStorage for future use
     if (response.data) {
@@ -167,6 +183,31 @@ export const getUserData = async () => {
     return null;
   } catch (error) {
     console.error('Error fetching user data:', error);
+    return null;
+  }
+};
+
+// Helper function to get admin data
+export const getAdminData = async () => {
+  try {
+    // First try to get from localStorage
+    const adminData = localStorage.getItem('adminData');
+    if (adminData) {
+      return JSON.parse(adminData);
+    }
+    
+    // If not in localStorage, try to get from API
+    const response = await api.get('/admin/me');
+    
+    // Save to localStorage for future use
+    if (response.data) {
+      localStorage.setItem('adminData', JSON.stringify(response.data));
+      return response.data;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error fetching admin data:', error);
     return null;
   }
 };

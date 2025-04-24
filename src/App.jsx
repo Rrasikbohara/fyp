@@ -1,10 +1,10 @@
 import React, { Suspense, lazy } from "react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, useNavigate } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import LazyLoader from "./utils/LazyLoader";
 import ErrorBoundary from "./components/ErrorBoundary";
-import { ToastContainer } from 'react-toastify';
-
+import { ToastContainer, toast } from 'react-toastify';
+import api from './services/api.js'; // Assuming you have an api instance
 
 // For cleaner error handling
 const withErrorBoundary = (Component) => (props) => (
@@ -41,6 +41,27 @@ const AdminAddEquipment = lazy(() => import("./pages/admin/AdminAddEquipment"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const App = () => {
+  const navigate = useNavigate();
+
+  // Add a logout handler that redirects to home
+  const handleLogout = () => {
+    // Clear authentication data
+    localStorage.removeItem('token');
+    localStorage.removeItem('userData');
+    localStorage.removeItem('user'); // Remove legacy key
+    
+    // Remove auth header from axios
+    if (api.defaults.headers.common['Authorization']) {
+      delete api.defaults.headers.common['Authorization'];
+    }
+    
+    // Navigate to home page
+    navigate('/');
+    
+    // Optional: Show success message
+    toast.success('Successfully logged out');
+  };
+
   return (
     <>
       <ToastContainer />

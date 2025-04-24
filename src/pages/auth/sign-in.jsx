@@ -16,20 +16,32 @@ const SignIn = () => {
   const navigate = useNavigate();
   const { login, isAuthenticated } = useAuth();
 
-  // Improved useEffect to check authentication status
+  // Improved useEffect to stop auto-redirecting to dashboard
   useEffect(() => {
-    // Clear any invalid auth data that might be causing issues
+    // Only check localStorage for token and userData, don't check for 'user'
     const token = localStorage.getItem('token');
     const userData = localStorage.getItem('userData');
     
-    // If we have both token and user data and auth context says we're authenticated
+    // Only redirect if both token and user data exist
     if (token && userData && isAuthenticated) {
-      console.log('Already authenticated, redirecting to dashboard');
-      navigate('/dashboard');
-    } else if ((token || userData) && !isAuthenticated) {
-      // We have inconsistent auth state - clear it
-      console.log('Inconsistent auth state detected, clearing auth data');
-      clearAllAuth();
+      try {
+        // Verify userData is valid JSON
+        JSON.parse(userData);
+        console.log('Already authenticated, redirecting to dashboard');
+        navigate('/dashboard');
+      } catch (error) {
+        // Clean up invalid data
+        console.log('Invalid user data in storage, clearing');
+        localStorage.removeItem('token');
+        localStorage.removeItem('userData');
+        localStorage.removeItem('user');
+      }
+    } else if (token || userData) {
+      // Inconsistent state - only one item exists
+      console.log('Inconsistent auth state, clearing data');
+      localStorage.removeItem('token');
+      localStorage.removeItem('userData');
+      localStorage.removeItem('user');
     }
   }, [navigate, isAuthenticated]);
 
@@ -47,9 +59,23 @@ const SignIn = () => {
 
     try {
       console.log('Attempting login with:', formData.email);
+      
+      // Add error handling for empty fields
+      if (!formData.email || !formData.password) {
+        setError('Please enter both email and password');
+        toast.error('Please enter both email and password');
+        setIsLoading(false);
+        return;
+      }
+      
+      console.log('Sending sign-in request with:', {
+        email: formData.email,
+        password: formData.password.substring(0, 1) + '...' // Log partial password for debugging
+      });
+      
       const response = await api.post('/user/signin', formData);
       
-      console.log('Login successful:', response.data);
+      console.log('Server response:', response.status, response.statusText);
       
       if (response.data.success && response.data.token) {
         // Save token in localStorage AND set it in the API instance
@@ -58,6 +84,11 @@ const SignIn = () => {
         
         // Save user data
         localStorage.setItem('userData', JSON.stringify(response.data.user));
+        
+        // Remove any old 'user' key if it exists
+        if (localStorage.getItem('user')) {
+          localStorage.removeItem('user');
+        }
         
         // Use the login function from auth context
         login(response.data.token, response.data.user);
@@ -73,16 +104,18 @@ const SignIn = () => {
         toast.error(response.data.message || 'Login failed');
       }
     } catch (err) {
-      console.error('Login error:', err);
+      console.error('Login error details:', err);
       
-      // Set error state
-      if (err.response?.status === 401) {
-        setError('Invalid email or password');
-        toast.error('Invalid email or password');
-      } else {
-        setError(err.response?.data?.message || 'Login failed. Please try again.');
-        toast.error(err.response?.data?.message || 'Login failed. Please try again.');
+      // More detailed error message
+      let errorMessage = 'Login failed. Please try again.';
+      
+      if (err.response) {
+        console.error('Response data:', err.response.data);
+        errorMessage = err.response.data?.message || errorMessage;
       }
+      
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }

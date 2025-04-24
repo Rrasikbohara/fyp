@@ -11,10 +11,11 @@ const ADMIN_DATA_KEY = 'adminData';
 
 export function AdminLogin() {
   const navigate = useNavigate();
-  const { adminAuth, adminLogin } = useAuth();
+  const { adminAuth, loginAdmin } = useAuth(); // Change from adminLogin to loginAdmin
   const [formData, setFormData] = useState({ username: "", password: "" });
   const [error, setError] = useState(""); // Make sure error state is defined
   const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Redirect immediately if already authenticated.
   useEffect(() => {
@@ -30,31 +31,47 @@ export function AdminLogin() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setIsLoading(true);
-    setError(""); // Clear previous errors
+    
+    // Clear previous errors
+    setError('');
+    setIsSubmitting(true);
     
     try {
-      // Use a direct axios request to avoid token interference
-      const response = await api.post('/admin/login', formData);
+      // Add debug logging
+      console.log('Submitting admin login for:', formData.username);
+      
+      const response = await api.post('/admin/signin', formData);
+      
+      console.log('Admin login response status:', response.status);
       
       if (response.data.success) {
-        const { token, admin } = response.data;
+        // Store admin token with consistent naming
+        localStorage.setItem(ADMIN_TOKEN_KEY, response.data.token);
         
-        // Use the adminLogin function to handle admin authentication separately
-        adminLogin(admin, token);
+        // Store admin data
+        localStorage.setItem(ADMIN_DATA_KEY, JSON.stringify(response.data.admin));
         
-        toast.success('Admin login successful');
+        // Log keys in localStorage for debugging
+        console.log('localStorage keys after admin login:', Object.keys(localStorage));
+        
+        // Set admin in context - FIX: use loginAdmin instead of adminLogin
+        loginAdmin(response.data.token, response.data.admin);
+        
+        // Redirect to admin dashboard
         navigate('/admin/dashboard');
       } else {
         setError(response.data.message || 'Login failed');
-        toast.error(response.data.message || 'Login failed');
       }
     } catch (err) {
-      const errorMessage = err.response?.data?.message || 'Login failed';
-      setError(errorMessage);
-      toast.error(errorMessage);
+      console.error('Admin login error:', err);
+      
+      if (err.response?.status === 401) {
+        setError('Invalid username or password');
+      } else {
+        setError(err.response?.data?.message || 'Login failed. Please try again.');
+      }
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
 

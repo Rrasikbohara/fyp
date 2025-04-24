@@ -186,3 +186,30 @@ export function clearAllAuth() {
   console.log('All authentication data cleared');
   return true;
 }
+
+// Add this function to handle legacy/inconsistent auth storage keys
+export function cleanupLegacyAuth() {
+  // List of keys that should not be used anymore
+  const legacyKeys = ['user', 'userToken'];
+  
+  // Check and remove legacy keys
+  legacyKeys.forEach(key => {
+    if (localStorage.getItem(key)) {
+      console.log(`Removing legacy auth key: ${key}`);
+      localStorage.removeItem(key);
+    }
+  });
+  
+  // Check for inconsistent state (having one but not both required keys)
+  const token = localStorage.getItem('token');
+  const userData = localStorage.getItem('userData');
+  
+  if ((token && !userData) || (!token && userData)) {
+    console.log('Inconsistent auth state detected, clearing all auth data');
+    localStorage.removeItem('token');
+    localStorage.removeItem('userData');
+    return true;
+  }
+  
+  return false;
+}

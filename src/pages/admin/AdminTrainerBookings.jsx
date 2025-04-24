@@ -1,675 +1,608 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../services/api';
 import { toast, ToastContainer } from 'react-toastify';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../contexts/AuthContext'; // Add missing auth context import
 import { 
-  HiSearch, HiFilter, HiRefresh, HiOutlineCalendar, 
-  HiOutlineX, HiOutlineCheck, HiOutlineClock, HiDownload,
-  HiOutlineUser, HiOutlineUsers, HiOutlineCurrencyDollar,
-  HiAdjustments
+  HiRefresh, HiSearch, HiCheck, HiX, HiClock, 
+  HiCalendar, HiUserCircle, HiCurrencyDollar, 
+  HiChevronDown, HiChevronUp, HiFilter, HiTrash
 } from 'react-icons/hi';
-import 'react-toastify/dist/ReactToastify.css';
 
 const AdminTrainerBookings = () => {
+  const { adminAuth } = useAuth(); // Add auth context usage
   const [bookings, setBookings] = useState([]);
-  const [filteredBookings, setFilteredBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [updatingId, setUpdatingId] = useState(null);
-  const navigate = useNavigate();
-  const { adminAuth } = useAuth();
+  const [expandedId, setExpandedId] = useState(null);
+  const [statusUpdating, setStatusUpdating] = useState(null);
   
-  // Filtering and sorting states
-  const [searchQuery, setSearchQuery] = useState('');
+  // Filtering
   const [statusFilter, setStatusFilter] = useState('all');
-  const [sortField, setSortField] = useState('sessionDate');
-  const [sortDirection, setSortDirection] = useState('desc');
-  const [selectedBooking, setSelectedBooking] = useState(null);
-  const [showDetail, setShowDetail] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState('sessionDate');
+  const [sortOrder, setSortOrder] = useState('desc');
   
-  // Responsive control
-  const [showFilters, setShowFilters] = useState(false);
-
   const fetchBookings = async () => {
     try {
       setLoading(true);
       setError(null);
       
-      // Check authentication first
-      const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
-      if (!token) {
-        console.error('No authentication token found');
-        toast.error('Authentication required. Please log in.');
-        setTimeout(() => navigate('/admin/signin'), 1500);
+      // Check admin auth state first
+      if (!adminAuth) {
+        console.error('Admin not authenticated');
+        setError('Admin authentication required');
+        toast.error('Authentication required');
         return;
       }
       
-      const res = await api.get('/admin/trainer-bookings');
-      console.log('Received bookings data:', res.data);
+      // Get admin token for auth - ensure it's retrieving the token correctly
+      const adminToken = localStorage.getItem('adminToken');
+      if (!adminToken) {
+        setError('Admin authentication required');
+        toast.error('Authentication required');
+        return;
+      }
       
-      // Process bookings to handle possible null values and format data
-      const processedBookings = res.data.map(booking => ({
-        ...booking,
-        user: booking.user || { name: 'Unknown User', email: 'N/A' },
-        trainer: booking.trainer || { name: 'Unknown Trainer', specialization: 'N/A', availability: 'unknown' },
-        sessionDate: booking.sessionDate ? new Date(booking.sessionDate) : new Date(),
-        amount: booking.amount || 0,
-        duration: booking.duration || 0,
-        status: booking.status || 'pending',
-        paymentStatus: booking.paymentStatus || 'pending'
-      }));
+      console.log('Using admin token of length:', adminToken.length);
       
-      setBookings(processedBookings);
-      applyFilters(processedBookings, searchQuery, statusFilter, sortField, sortDirection);
+      // Using the correct endpoint with explicit token
+      const response = await api.get('/trainers/admin/bookings');
       
-      toast.success(`Loaded ${processedBookings.length} bookings`);
+      console.log('Fetched trainer bookings:', response.data.length || 0);
+      setBookings(response.data);
     } catch (error) {
       console.error('Error fetching trainer bookings:', error);
+      setError('Failed to load bookings');
+      toast.error('Failed to load trainer bookings');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Add delete booking function
+  const handleDeleteBooking = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this booking?')) {
+      return;
+    }
+    
+    try {
+      setStatusUpdating(id);
       
-      // Handle authentication errors
-      if (error.response?.status === 401) {
-        setError('Authentication required. Please log in again.');
-        toast.error('Session expired. Please log in again.');
-        setTimeout(() => navigate('/admin/signin'), 1500);
+      // Ensure admin is authenticated
+      const adminToken = localStorage.getItem('adminToken');
+      if (!adminToken) {
+        toast.error('Admin authentication required');
         return;
       }
       
-      setError('Failed to load trainer bookings. Please try again later.');
-      toast.error(`Failed to load trainer bookings: ${error.response?.status === 404 ? 'Endpoint not found (404)' : error.message}`);
+      await api.delete(`/trainers/bookings/${id}`, {
+        headers: {
+          'Authorization': `Bearer ${adminToken}`
+        }
+      });
+      
+      // Remove booking from the list
+      setBookings(bookings.filter(booking => booking._id !== id));
+      toast.success('Booking deleted successfully');
+    } catch (error) {
+      console.error('Error deleting booking:', error);
+      toast.error('Failed to delete booking');
+    } finally {
+      setStatusUpdating(null);
+    }
+  };
+  
+  // Add bulk delete function for cancelled bookings
+  const handleDeleteAllCancelled = async () => {
+    if (!window.confirm('Are you sure you want to delete ALL cancelled bookings?')) {
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      
+      // Ensure admin is authenticated
+      const adminToken = localStorage.getItem('adminToken');
+      if (!adminToken) {
+        toast.error('Admin authentication required');
+        return;
+      }
+      
+      const response = await api.delete('/trainers/bookings/cancelled/all', {
+        headers: {
+          'Authorization': `Bearer ${adminToken}`
+        }
+      });
+      
+      // Refresh the bookings list
+      await fetchBookings();
+      toast.success(`${response.data.deletedCount || 'All'} cancelled bookings deleted`);
+    } catch (error) {
+      console.error('Error deleting cancelled bookings:', error);
+      toast.error('Failed to delete cancelled bookings');
     } finally {
       setLoading(false);
     }
   };
 
-  // Apply filters and sorting to bookings
-  const applyFilters = (bookingsData, query, status, field, direction) => {
-    let filtered = [...bookingsData];
-    
-    // Apply search query
-    if (query) {
-      const searchLower = query.toLowerCase();
-      filtered = filtered.filter(booking => 
-        booking.user?.name?.toLowerCase().includes(searchLower) ||
-        booking.user?.email?.toLowerCase().includes(searchLower) ||
-        booking.trainer?.name?.toLowerCase().includes(searchLower) ||
-        booking._id?.toLowerCase().includes(searchLower)
-      );
-    }
-    
-    // Apply status filter
-    if (status !== 'all') {
-      filtered = filtered.filter(booking => booking.status === status);
-    }
-    
-    // Apply sorting
-    filtered.sort((a, b) => {
-      let valueA, valueB;
-      
-      switch(field) {
-        case 'sessionDate':
-          valueA = new Date(a.sessionDate).getTime();
-          valueB = new Date(b.sessionDate).getTime();
-          break;
-        case 'amount':
-          valueA = a.amount;
-          valueB = b.amount;
-          break;
-        case 'duration':
-          valueA = a.duration;
-          valueB = b.duration;
-          break;
-        case 'userName':
-          valueA = a.user?.name || '';
-          valueB = b.user?.name || '';
-          break;
-        default:
-          valueA = a[field];
-          valueB = b[field];
-      }
-      
-      if (direction === 'asc') {
-        return valueA > valueB ? 1 : -1;
-      } else {
-        return valueA < valueB ? 1 : -1;
-      }
-    });
-    
-    setFilteredBookings(filtered);
-  };
-
   useEffect(() => {
-    applyFilters(bookings, searchQuery, statusFilter, sortField, sortDirection);
-  }, [searchQuery, statusFilter, sortField, sortDirection]);
-
-  useEffect(() => {
-    // Check if user is authenticated as admin
-    if (!localStorage.getItem('adminToken') && !localStorage.getItem('token')) {
-      toast.error('Authentication required');
-      navigate('/admin/signin');
-      return;
-    }
-    
     fetchBookings();
   }, []);
-
-  const handleStatusChange = async (id, newStatus) => {
-    setUpdatingId(id);
+  
+  // Filter bookings based on search, status, etc.
+  const filteredBookings = bookings.filter(booking => {
+    // Status filter
+    if (statusFilter !== 'all' && booking.status !== statusFilter) {
+      return false;
+    }
+    
+    // Search filter (case insensitive)
+    const searchLower = searchQuery.toLowerCase();
+    if (searchQuery && !(
+      booking.user?.name?.toLowerCase().includes(searchLower) ||
+      booking.trainer?.name?.toLowerCase().includes(searchLower) ||
+      booking.sessionType?.toLowerCase().includes(searchLower)
+    )) {
+      return false;
+    }
+    
+    return true;
+  }).sort((a, b) => {
+    // Sort logic
+    let valA = a[sortBy];
+    let valB = b[sortBy];
+    
+    // Handle nested fields
+    if (sortBy === 'user.name') {
+      valA = a.user?.name;
+      valB = b.user?.name;
+    } else if (sortBy === 'trainer.name') {
+      valA = a.trainer?.name;
+      valB = b.trainer?.name;
+    } else if (sortBy === 'amount') {
+      valA = a.amount;
+      valB = b.amount;
+    }
+    
+    // Default sort for undefined values
+    if (valA === undefined) return sortOrder === 'asc' ? -1 : 1;
+    if (valB === undefined) return sortOrder === 'asc' ? 1 : -1;
+    
+    // Dates need special comparison
+    if (sortBy === 'sessionDate' || sortBy === 'createdAt') {
+      return sortOrder === 'asc' 
+        ? new Date(valA) - new Date(valB)
+        : new Date(valB) - new Date(valA);
+    }
+    
+    // String comparison
+    if (typeof valA === 'string' && typeof valB === 'string') {
+      return sortOrder === 'asc'
+        ? valA.localeCompare(valB)
+        : valB.localeCompare(valA);
+    }
+    
+    // Number comparison
+    return sortOrder === 'asc' ? valA - valB : valB - valA;
+  });
+  
+  const handleStatusChange = async (id, status) => {
     try {
-      await api.put(`/admin/booking/trainer/${id}`, { status: newStatus });
-      toast.success("Trainer booking status updated successfully");
-
-      // Update local state
-      const updatedBookings = bookings.map(booking => 
-        booking._id === id ? { ...booking, status: newStatus } : booking
-      );
-      setBookings(updatedBookings);
-      applyFilters(updatedBookings, searchQuery, statusFilter, sortField, sortDirection);
+      setStatusUpdating(id);
+      
+      // Explicitly use API with your fixed interceptors
+      await api.patch(`/trainers/bookings/${id}/status`, { status });
+      
+      // Update booking in local state
+      setBookings(bookings.map(booking => 
+        booking._id === id ? { 
+          ...booking, 
+          status, 
+          // If status is completed, also update payment status
+          paymentStatus: status === 'completed' ? 'completed' : booking.paymentStatus
+        } : booking
+      ));
+      
+      toast.success(`Booking status updated to ${status}`);
     } catch (error) {
       console.error('Error updating status:', error);
-      toast.error("Status update failed");
+      toast.error('Failed to update booking status');
     } finally {
-      setUpdatingId(null);
+      setStatusUpdating(null);
     }
   };
-
-  const handleDelete = async (id) => {
-    if (!window.confirm("Delete this trainer booking?")) return;
+  
+  const handlePaymentStatusChange = async (id, paymentStatus) => {
     try {
-      await api.delete(`/admin/booking/trainer/${id}`);
-      toast.success("Trainer booking deleted successfully");
+      setStatusUpdating(id);
       
-      const updatedBookings = bookings.filter(b => b._id !== id);
-      setBookings(updatedBookings);
-      applyFilters(updatedBookings, searchQuery, statusFilter, sortField, sortDirection);
-    } catch (error) {
-      console.error('Error deleting booking:', error);
-      toast.error("Delete failed");
-    }
-  };
-  
-  const handleSort = (field) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
-    }
-  };
-  
-  const exportToCSV = () => {
-    const headers = ['Booking ID', 'User', 'Email', 'Trainer', 'Duration', 'Session Date', 'Amount', 'Payment Status', 'Status'];
-    
-    const csvData = filteredBookings.map(booking => [
-      booking._id,
-      booking.user?.name || 'Unknown',
-      booking.user?.email || 'N/A',
-      booking.trainer?.name || 'Unknown',
-      `${booking.duration}h`,
-      new Date(booking.sessionDate).toLocaleString(),
-      `₹${booking.amount}`,
-      booking.paymentStatus,
-      booking.status
-    ]);
-    
-    const csvContent = [
-      headers.join(','),
-      ...csvData.map(row => row.join(','))
-    ].join('\n');
-    
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `trainer_bookings_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-  
-  const viewDetail = (booking) => {
-    setSelectedBooking(booking);
-    setShowDetail(true);
-  };
-
-  // Loading state UI
-  if (loading && !bookings.length) {
-    return (
-      <div className="p-6 flex justify-center items-center h-96">
-        <div className="flex flex-col items-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mb-4"></div>
-          <p className="text-gray-700 font-medium">Loading trainer bookings...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-4 sm:p-6">
-        <div className="bg-red-50 border border-red-200 text-red-800 p-4 rounded-lg font-medium">
-          {error}
-        </div>
-        <button 
-          onClick={fetchBookings} 
-          className="mt-4 px-4 py-2 bg-indigo-700 text-white rounded hover:bg-indigo-800"
-        >
-          Try Again
-        </button>
-      </div>
-    );
-  }
-
-  // Helper function to format date
-  const formatDate = (date) => {
-    if (!date) return 'N/A';
-    try {
-      return new Date(date).toLocaleString();
-    } catch (e) {
-      return 'Invalid Date';
-    }
-  };
-  
-  // Status badge component with enhanced colors
-  const StatusBadge = ({ status }) => {
-    const getStatusClasses = () => {
-      switch(status) {
-        case 'confirmed':
-          return 'bg-green-100 text-green-900 border-green-300 font-semibold';
-        case 'cancelled':
-          return 'bg-red-100 text-red-900 border-red-300 font-semibold';
-        default:
-          return 'bg-yellow-100 text-yellow-900 border-yellow-300 font-semibold';
+      console.log(`Updating payment status to: ${paymentStatus} for booking ID: ${id}`);
+      
+      // Make sure we're sending the correct property name
+      const response = await api.patch(`/trainers/bookings/${id}/payment`, { 
+        paymentStatus: paymentStatus // Ensure property name matches what the backend expects
+      });
+      
+      console.log('Payment status update response:', response.status);
+      
+      if (response.data && response.data.success) {
+        // Update booking in local state
+        setBookings(bookings.map(booking => 
+          booking._id === id ? { 
+            ...booking, 
+            paymentStatus,
+            // If payment is completed and booking was pending, update status too
+            status: paymentStatus === 'completed' && booking.status === 'pending' ? 'confirmed' : booking.status
+          } : booking
+        ));
+        
+        toast.success(`Payment status updated to ${paymentStatus}`);
+      } else {
+        throw new Error(response.data?.message || 'Failed to update payment status');
       }
-    };
+    } catch (error) {
+      console.error('Error updating payment status:', error);
+      toast.error(error.response?.data?.message || 'Failed to update payment status');
+    } finally {
+      setStatusUpdating(null);
+    }
+  };
+  
+  const toggleExpand = (id) => {
+    setExpandedId(expandedId === id ? null : id);
+  };
+  
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
+  
+  // Status badge component
+  const StatusBadge = ({ status }) => {
+    let bgColor = '';
+    let textColor = '';
+    let icon = null;
+    
+    switch (status) {
+      case 'confirmed':
+        bgColor = 'bg-green-100';
+        textColor = 'text-green-800';
+        icon = <HiCheck className="w-4 h-4" />;
+        break;
+      case 'cancelled':
+        bgColor = 'bg-red-100';
+        textColor = 'text-red-800';
+        icon = <HiX className="w-4 h-4" />;
+        break;
+      case 'completed':
+        bgColor = 'bg-blue-100';
+        textColor = 'text-blue-800';
+        icon = <HiCheck className="w-4 h-4" />;
+        break;
+      default:
+        bgColor = 'bg-yellow-100';
+        textColor = 'text-yellow-800';
+        icon = <HiClock className="w-4 h-4" />;
+    }
     
     return (
-      <span className={`px-2 py-1 rounded-full text-xs border ${getStatusClasses()}`}>
+      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${bgColor} ${textColor}`}>
+        {icon}
         {status.charAt(0).toUpperCase() + status.slice(1)}
       </span>
     );
   };
   
-  // Payment status badge component with enhanced colors
-  const PaymentBadge = ({ status, method }) => {
-    const getStatusClasses = () => {
-      switch(status) {
-        case 'completed':
-          return 'bg-green-100 text-green-900 border-green-300 font-semibold';
-        case 'failed':
-          return 'bg-red-100 text-red-900 border-red-300 font-semibold';
-        default:
-          return 'bg-yellow-100 text-yellow-900 border-yellow-300 font-semibold';
-      }
-    };
+  // Payment status badge
+  const PaymentBadge = ({ status }) => {
+    let bgColor = '';
+    let textColor = '';
+    
+    switch (status) {
+      case 'completed':
+        bgColor = 'bg-green-100';
+        textColor = 'text-green-800';
+        break;
+      case 'failed':
+        bgColor = 'bg-red-100';
+        textColor = 'text-red-800';
+        break;
+      default:
+        bgColor = 'bg-yellow-100';
+        textColor = 'text-yellow-800';
+    }
     
     return (
-      <span className={`px-2 py-1 rounded-full text-xs border ${getStatusClasses()}`}>
-        {method} - {status}
+      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${bgColor} ${textColor}`}>
+        {status.charAt(0).toUpperCase() + status.slice(1)}
       </span>
     );
   };
+  
+  if (loading && !bookings.length) {
+    return (
+      <div className="p-8 flex justify-center">
+        <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-3 sm:p-4 md:p-6">
-      <div className="bg-white rounded-lg shadow-xl overflow-hidden">
-        {/* Header */}
-        <div className="p-3 sm:p-4 md:p-6 border-b border-gray-200 bg-gray-50">
-          <div className="flex flex-col md:flex-row gap-4 justify-between">
-            <div>
-              <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-2">
-                <HiOutlineUsers className="text-indigo-700" />
-                Trainer Bookings Management
-              </h1>
-              <p className="text-gray-700 text-sm mt-1 font-medium">Manage and process trainer booking requests</p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={fetchBookings}
-                className="px-3 py-2 bg-indigo-100 text-indigo-800 rounded-md hover:bg-indigo-200 flex items-center justify-center gap-1 text-sm font-medium"
-                disabled={loading}
-              >
-                <HiRefresh className={loading ? "animate-spin" : ""} />
-                <span>{loading ? "Loading..." : "Refresh"}</span>
-              </button>
-              <button
-                onClick={exportToCSV}
-                className="px-3 py-2 bg-green-100 text-green-800 rounded-md hover:bg-green-200 flex items-center justify-center gap-1 text-sm font-medium"
-              >
-                <HiDownload />
-                <span>Export CSV</span>
-              </button>
-              <button
-                onClick={() => setShowFilters(!showFilters)}
-                className="px-3 py-2 bg-gray-100 text-gray-800 rounded-md hover:bg-gray-200 flex items-center justify-center gap-1 text-sm font-medium md:hidden"
-              >
-                <HiAdjustments />
-                <span>{showFilters ? "Hide Filters" : "Filters"}</span>
-              </button>
-            </div>
-          </div>
+    <div className="p-6 max-w-full">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+        <div>
+          <h1 className="text-2xl font-bold mb-1">Trainer Bookings</h1>
+          <p className="text-gray-600">Manage and monitor all personal trainer sessions</p>
+        </div>
+        
+        <div className="flex flex-wrap gap-2">
+          <button 
+            onClick={fetchBookings}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"
+          >
+            <HiRefresh className={loading ? "animate-spin" : ""} />
+            Refresh
+          </button>
           
-          {/* Filters & Search - Always visible on desktop, toggleable on mobile */}
-          <div className={`mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 ${showFilters ? 'block' : 'hidden md:grid'}`}>
+          <button 
+            onClick={handleDeleteAllCancelled}
+            className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100"
+          >
+            <HiTrash className="mr-1" />
+            Delete All Cancelled
+          </button>
+        </div>
+      </div>
+      
+      {/* Filtering and Search */}
+      <div className="bg-white shadow-md rounded-lg p-4 mb-6">
+        <div className="flex flex-col md:flex-row gap-4 justify-between">
+          <div className="flex-grow">
             <div className="relative">
               <input
                 type="text"
-                placeholder="Search bookings..."
-                className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:outline-none text-gray-800"
+                placeholder="Search by user, trainer or session type..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
               />
-              <HiSearch className="absolute left-3 top-2.5 text-gray-500" />
+              <HiSearch className="absolute left-3 top-2.5 text-gray-400" />
             </div>
-            
-            <div className="flex items-center gap-2">
-              <HiFilter className="text-gray-500" />
+          </div>
+          
+          <div className="flex flex-wrap gap-2">
+            <div className="flex items-center">
+              <HiFilter className="text-gray-500 mr-2" />
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:outline-none text-gray-800 font-medium"
+                className="p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
               >
                 <option value="all">All Statuses</option>
                 <option value="pending">Pending</option>
                 <option value="confirmed">Confirmed</option>
+                <option value="completed">Completed</option>
                 <option value="cancelled">Cancelled</option>
               </select>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              <HiOutlineCalendar className="text-gray-500" />
-              <select
-                value={sortField}
-                onChange={(e) => setSortField(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:outline-none text-gray-800 font-medium"
-              >
-                <option value="sessionDate">Session Date</option>
-                <option value="amount">Amount</option>
-                <option value="duration">Duration</option>
-                <option value="userName">User Name</option>
-              </select>
-              <button
-                onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')}
-                className="p-2 border border-gray-300 rounded-md bg-white text-gray-800"
-              >
-                {sortDirection === 'asc' ? '↑' : '↓'}
-              </button>
-            </div>
-          </div>
-        </div>
-        
-        {/* Booking count summary cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 sm:gap-4 p-3 sm:p-4 md:p-6 bg-gray-100">
-          <div className="bg-white p-4 rounded-lg shadow border border-gray-200 flex items-center gap-4">
-            <div className="bg-blue-100 p-3 rounded-full">
-              <HiOutlineCalendar className="text-blue-700 text-xl" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-700 font-medium">Total Bookings</p>
-              <p className="text-xl font-bold text-gray-900">{bookings.length}</p>
-            </div>
-          </div>
-          
-          <div className="bg-white p-4 rounded-lg shadow border border-gray-200 flex items-center gap-4">
-            <div className="bg-green-100 p-3 rounded-full">
-              <HiOutlineCheck className="text-green-700 text-xl" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-700 font-medium">Confirmed</p>
-              <p className="text-xl font-bold text-gray-900">{bookings.filter(b => b.status === 'confirmed').length}</p>
-            </div>
-          </div>
-          
-          <div className="bg-white p-4 rounded-lg shadow border border-gray-200 flex items-center gap-4">
-            <div className="bg-yellow-100 p-3 rounded-full">
-              <HiOutlineClock className="text-yellow-700 text-xl" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-700 font-medium">Pending</p>
-              <p className="text-xl font-bold text-gray-900">{bookings.filter(b => b.status === 'pending').length}</p>
-            </div>
-          </div>
-        </div>
-        
-        {/* Bookings Table */}
-        {filteredBookings.length === 0 ? (
-          <div className="p-6 text-center">
-            <div className="bg-gray-50 p-6 rounded-lg inline-block">
-              <HiOutlineX className="mx-auto h-12 w-12 text-gray-500" />
-              <h3 className="mt-2 text-lg font-medium text-gray-900">No bookings found</h3>
-              <p className="mt-1 text-sm text-gray-700">
-                {searchQuery || statusFilter !== 'all' ? 
-                  'Try adjusting your filters to see more results.' : 
-                  'There are no trainer bookings in the system.'}
-              </p>
-              {(searchQuery || statusFilter !== 'all') && (
-                <button 
-                  className="mt-3 text-sm text-indigo-700 hover:text-indigo-900 font-medium"
-                  onClick={() => {
-                    setSearchQuery('');
-                    setStatusFilter('all');
-                  }}
-                >
-                  Clear filters
-                </button>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-100">
-                <tr>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider cursor-pointer whitespace-nowrap" onClick={() => handleSort('userName')}>
-                    User {sortField === 'userName' && (sortDirection === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider hidden sm:table-cell">
-                    Trainer
-                  </th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider cursor-pointer hidden md:table-cell" onClick={() => handleSort('duration')}>
-                    Duration {sortField === 'duration' && (sortDirection === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider cursor-pointer whitespace-nowrap hidden md:table-cell" onClick={() => handleSort('sessionDate')}>
-                    Date {sortField === 'sessionDate' && (sortDirection === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider cursor-pointer" onClick={() => handleSort('amount')}>
-                    Amount {sortField === 'amount' && (sortDirection === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider hidden lg:table-cell">
-                    Payment
-                  </th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th scope="col" className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredBookings.map(booking => (
-                  <tr key={booking._id} className="hover:bg-gray-50 transition-colors" onClick={() => viewDetail(booking)}>
-                    <td className="px-4 py-3 whitespace-nowrap cursor-pointer">
-                      {booking.user ? (
-                        <div>
-                          <div className="font-semibold text-gray-900">{booking.user.name || 'N/A'}</div>
-                          <div className="text-xs text-gray-600">{booking.user.email || 'N/A'}</div>
-                        </div>
-                      ) : 'N/A'}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap cursor-pointer hidden sm:table-cell">
-                      {booking.trainer ? (
-                        <div>
-                          <div className="font-semibold text-gray-900">{booking.trainer.name || 'N/A'}</div>
-                          <div className="text-xs text-gray-600">{booking.trainer.specialization || 'N/A'}</div>
-                        </div>
-                      ) : 'N/A'}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-700 cursor-pointer hidden md:table-cell">
-                      {booking.duration || 0}h
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-700 cursor-pointer hidden md:table-cell">
-                      {formatDate(booking.sessionDate)}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm font-bold text-gray-900 cursor-pointer">
-                      ₹{booking.amount || 0}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap cursor-pointer hidden lg:table-cell">
-                      <PaymentBadge status={booking.paymentStatus} method={booking.paymentMethod} />
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap cursor-pointer">
-                      <StatusBadge status={booking.status} />
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-center">
-                      <div className="inline-flex rounded-md shadow-sm" onClick={(e) => e.stopPropagation()}>
-                        <select
-                          value={booking.status || 'pending'}
-                          onChange={e => handleStatusChange(booking._id, e.target.value)}
-                          disabled={updatingId === booking._id}
-                          className={`px-2 py-1 text-sm border rounded font-semibold ${
-                            booking.status === 'confirmed' ? 'text-green-800 border-green-300 bg-green-50' : 
-                            booking.status === 'pending' ? 'text-yellow-800 border-yellow-300 bg-yellow-50' : 
-                            'text-red-800 border-red-300 bg-red-50'
-                          } focus:outline-none focus:ring-2 focus:ring-indigo-500`}
-                        >
-                          <option value="pending">Pending</option>
-                          <option value="confirmed">Confirmed</option>
-                          <option value="cancelled">Cancelled</option>
-                        </select>
-                        <button
-                          onClick={() => handleDelete(booking._id)}
-                          className="ml-1 inline-flex items-center px-2 py-1 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 whitespace-nowrap"
-                          disabled={updatingId === booking._id}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        
-        <div className="p-4 bg-gray-50 border-t border-gray-200">
-          <div className="flex justify-between items-center">
-            <div className="text-sm text-gray-700 font-medium">
-              Showing {filteredBookings.length} of {bookings.length} bookings
             </div>
           </div>
         </div>
       </div>
       
-      {/* Booking Detail Modal */}
-      {showDetail && selectedBooking && (
-        <div className="fixed inset-0 bg-black/60 flex justify-center items-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            {/* Modal Header */}
-            <div className="flex justify-between items-center p-4 border-b bg-gray-50">
-              <h3 className="text-lg font-bold text-gray-900">Booking Details</h3>
-              <button 
-                className="text-gray-500 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100"
-                onClick={() => setShowDetail(false)}
-              >
-                <HiOutlineX className="h-5 w-5" />
-              </button>
-            </div>
-            
-            <div className="p-6 space-y-6">
-              {/* Booking ID */}
-              <div className="flex justify-between items-center pb-4 border-b">
-                <div className="font-semibold text-gray-800">Booking ID:</div>
-                <div className="text-sm bg-gray-100 px-3 py-1 rounded-md font-mono">{selectedBooking._id}</div>
-              </div>
-              
-              {/* User Info */}
-              <div className="flex items-start space-x-4 pb-4 border-b">
-                <div className="bg-blue-100 p-3 rounded-full">
-                  <HiOutlineUser className="text-blue-700" />
-                </div>
-                <div className="flex-grow">
-                  <h4 className="font-semibold text-gray-900">User Information</h4>
-                  <div className="text-sm space-y-1 mt-1 text-gray-700">
-                    <p><span className="text-gray-600 font-medium">Name:</span> {selectedBooking.user.name || 'N/A'}</p>
-                    <p><span className="text-gray-600 font-medium">Email:</span> {selectedBooking.user.email || 'N/A'}</p>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Trainer Info */}
-              <div className="flex items-start space-x-4 pb-4 border-b">
-                <div className="bg-purple-100 p-3 rounded-full">
-                  <HiOutlineUsers className="text-purple-700" />
-                </div>
-                <div className="flex-grow">
-                  <h4 className="font-semibold text-gray-900">Trainer Information</h4>
-                  <div className="text-sm space-y-1 mt-1 text-gray-700">
-                    <p><span className="text-gray-600 font-medium">Name:</span> {selectedBooking.trainer.name || 'N/A'}</p>
-                    <p><span className="text-gray-600 font-medium">Specialization:</span> {selectedBooking.trainer.specialization || 'N/A'}</p>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Session Info */}
-              <div className="flex items-start space-x-4 pb-4 border-b">
-                <div className="bg-green-100 p-3 rounded-full">
-                  <HiOutlineCalendar className="text-green-700" />
-                </div>
-                <div className="flex-grow">
-                  <h4 className="font-semibold text-gray-900">Session Details</h4>
-                  <div className="text-sm space-y-1 mt-1 text-gray-700">
-                    <p><span className="text-gray-600 font-medium">Date:</span> {formatDate(selectedBooking.sessionDate)}</p>
-                    <p><span className="text-gray-600 font-medium">Duration:</span> {selectedBooking.duration}h</p>
-                    <p><span className="text-gray-600 font-medium">Status:</span> <StatusBadge status={selectedBooking.status} /></p>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Payment Info */}
-              <div className="flex items-start space-x-4">
-                <div className="bg-yellow-100 p-3 rounded-full">
-                  <HiOutlineCurrencyDollar className="text-yellow-700" />
-                </div>
-                <div className="flex-grow">
-                  <h4 className="font-semibold text-gray-900">Payment Details</h4>
-                  <div className="text-sm space-y-1 mt-1 text-gray-700">
-                    <p><span className="text-gray-600 font-medium">Amount:</span> ₹{selectedBooking.amount}</p>
-                    <p><span className="text-gray-600 font-medium">Method:</span> {selectedBooking.paymentMethod}</p>
-                    <p><span className="text-gray-600 font-medium">Status:</span> <PaymentBadge status={selectedBooking.paymentStatus} method={selectedBooking.paymentMethod} /></p>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <div className="bg-gray-50 px-6 py-4 rounded-b-lg flex flex-wrap justify-end gap-3">
-              <button 
-                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 font-medium"
-                onClick={() => setShowDetail(false)}
-              >
-                Close
-              </button>
-              <select
-                value={selectedBooking.status}
-                onChange={(e) => {
-                  handleStatusChange(selectedBooking._id, e.target.value);
-                  setSelectedBooking({...selectedBooking, status: e.target.value});
-                }}
-                className={`px-3 py-2 border rounded-md focus:outline-none focus:ring-2 font-semibold ${
-                  selectedBooking.status === 'confirmed' ? 'text-green-900 border-green-300 bg-green-50' : 
-                  selectedBooking.status === 'pending' ? 'text-yellow-900 border-yellow-300 bg-yellow-50' : 
-                  'text-red-900 border-red-300 bg-red-50'
-                }`}
-              >
-                <option value="pending">Set as Pending</option>
-                <option value="confirmed">Set as Confirmed</option>
-                <option value="cancelled">Set as Cancelled</option>
-              </select>
+      {/* Error message */}
+      {error && (
+        <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-6">
+          <div className="flex">
+            <div className="ml-3">
+              <p className="text-sm text-red-700">{error}</p>
             </div>
           </div>
         </div>
       )}
+      
+      {/* Bookings table */}
+      <div className="bg-white shadow-md rounded-lg overflow-hidden">
+        {filteredBookings.length === 0 ? (
+          <div className="p-8 text-center">
+            <p className="text-gray-500 text-lg">No trainer bookings found</p>
+            <p className="text-gray-400 mt-1">Try adjusting your filters or search query</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={() => handleSort('user.name')}>
+                    User
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={() => handleSort('trainer.name')}>
+                    Trainer
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={() => handleSort('sessionDate')}>
+                    Session Date
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={() => handleSort('amount')}>
+                    Payment
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={() => handleSort('status')}>
+                    Status
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {filteredBookings.map(booking => (
+                  <React.Fragment key={booking._id}>
+                    <tr className="hover:bg-gray-50 cursor-pointer" onClick={() => toggleExpand(booking._id)}>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="flex-shrink-0 h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center">
+                            <HiUserCircle className="h-6 w-6 text-blue-600" />
+                          </div>
+                          <div className="ml-4">
+                            <div className="text-sm font-medium text-gray-900">{booking.user?.name || 'Unknown User'}</div>
+                            <div className="text-sm text-gray-500">{booking.user?.email || 'No email'}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{booking.trainer?.name || 'Unknown Trainer'}</div>
+                        <div className="text-sm text-gray-500">{booking.trainer?.specialization || 'No specialization'}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900 flex items-center">
+                          <HiCalendar className="text-gray-500 mr-2" />
+                          {formatDate(booking.sessionDate)}
+                        </div>
+                        <div className="text-sm text-gray-500 mt-1">
+                          {booking.time || 'No time specified'}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900 font-medium">₹{booking.amount || 0}</div>
+                        <PaymentBadge status={booking.paymentStatus || 'pending'} />
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <StatusBadge status={booking.status} />
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button 
+                          className="text-blue-600 hover:text-blue-900 px-2"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleExpand(booking._id);
+                          }}
+                        >
+                          {expandedId === booking._id ? (
+                            <HiChevronUp className="h-5 w-5" />
+                          ) : (
+                            <HiChevronDown className="h-5 w-5" />
+                          )}
+                        </button>
+                      </td>
+                    </tr>
+                    
+                    {/* Expanded details row */}
+                    {expandedId === booking._id && (
+                      <tr className="bg-gray-50">
+                        <td colSpan={6} className="px-6 py-4 text-sm">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                              <h4 className="font-medium text-gray-700 mb-2">Session Details</h4>
+                              <div className="space-y-2">
+                                <p><span className="text-gray-500">Booking ID:</span> {booking._id}</p>
+                                <p><span className="text-gray-500">Session Type:</span> {booking.sessionType || 'Personal Training'}</p>
+                                <p><span className="text-gray-500">Duration:</span> {booking.duration || 1} hour(s)</p>
+                                <p><span className="text-gray-500">Notes:</span> {booking.notes || 'No notes'}</p>
+                                <p><span className="text-gray-500">Created:</span> {formatDate(booking.createdAt)}</p>
+                              </div>
+                            </div>
+                            
+                            <div>
+                              <h4 className="font-medium text-gray-700 mb-2">User Details</h4>
+                              <div className="space-y-2">
+                                <p><span className="text-gray-500">Name:</span> {booking.user?.name || 'Unknown'}</p>
+                                <p><span className="text-gray-500">Email:</span> {booking.user?.email || 'No email'}</p>
+                                <p><span className="text-gray-500">Phone:</span> {booking.user?.phoneNumber || 'No phone'}</p>
+                              </div>
+                              
+                              {booking.reviewed && (
+                                <div className="mt-4">
+                                  <h4 className="font-medium text-gray-700 mb-2">User Feedback</h4>
+                                  <div className="bg-blue-50 p-3 rounded">
+                                    <div className="flex items-center mb-1">
+                                      {[1, 2, 3, 4, 5].map((star) => (
+                                        <HiStar 
+                                          key={star} 
+                                          className={star <= (booking.rating || 0) ? "text-yellow-500" : "text-gray-300"} 
+                                        />
+                                      ))}
+                                      <span className="ml-2 text-sm font-medium">{booking.rating || 0}/5</span>
+                                    </div>
+                                    <p className="text-sm italic">{booking.review || 'No written review'}</p>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          
+                          <div className="flex flex-wrap gap-2 justify-end pt-4 border-t border-gray-200">
+                            {/* Status update buttons */}
+                            {(booking.status !== 'cancelled') && (
+                              <>
+                                {booking.status !== 'confirmed' && (
+                                  <button
+                                    onClick={() => handleStatusChange(booking._id, 'confirmed')}
+                                    disabled={statusUpdating === booking._id}
+                                    className="px-3 py-1 bg-green-100 text-green-800 rounded-md hover:bg-green-200 disabled:opacity-50"
+                                  >
+                                    {statusUpdating === booking._id ? 'Updating...' : 'Confirm'}
+                                  </button>
+                                )}
+                                
+                                {booking.status !== 'completed' && (
+                                  <button
+                                    onClick={() => handleStatusChange(booking._id, 'completed')}
+                                    disabled={statusUpdating === booking._id}
+                                    className="px-3 py-1 bg-blue-100 text-blue-800 rounded-md hover:bg-blue-200 disabled:opacity-50"
+                                  >
+                                    {statusUpdating === booking._id ? 'Updating...' : 'Mark Complete'}
+                                  </button>
+                                )}
+                                
+                                {booking.status !== 'cancelled' && (
+                                  <button
+                                    onClick={() => handleStatusChange(booking._id, 'cancelled')}
+                                    disabled={statusUpdating === booking._id}
+                                    className="px-3 py-1 bg-red-100 text-red-800 rounded-md hover:bg-red-200 disabled:opacity-50"
+                                  >
+                                    {statusUpdating === booking._id ? 'Updating...' : 'Cancel'}
+                                  </button>
+                                )}
+                              </>
+                            )}
+                            
+                            {/* Payment update button */}
+                            {booking.paymentStatus !== 'completed' && (
+                              <button
+                                onClick={() => handlePaymentStatusChange(booking._id, 'completed')}
+                                disabled={statusUpdating === booking._id}
+                                className="px-3 py-1 bg-purple-100 text-purple-800 rounded-md hover:bg-purple-200 disabled:opacity-50"
+                              >
+                                {statusUpdating === booking._id ? 'Updating...' : 'Mark Paid'}
+                              </button>
+                            )}
+                            
+                            {/* Delete button - always available for admin */}
+                            <button
+                              onClick={() => handleDeleteBooking(booking._id)}
+                              disabled={statusUpdating === booking._id}
+                              className="px-3 py-1 bg-red-100 text-red-800 rounded-md hover:bg-red-200 disabled:opacity-50"
+                            >
+                              {statusUpdating === booking._id ? 'Processing...' : 'Delete Booking'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      
+      {/* Showing count of bookings */}
+      <div className="mt-4 text-sm text-gray-500">
+        Showing {filteredBookings.length} of {bookings.length} trainer bookings
+      </div>
       
       <ToastContainer position="bottom-right" />
     </div>
