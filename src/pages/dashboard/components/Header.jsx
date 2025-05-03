@@ -81,20 +81,8 @@ const Header = () => {
                 </div>
               </div>
               <hr className="my-2" />
-              <Link
-                to="/dashboard/profile"
-                className="flex items-center px-4 py-2 text-gray-700 hover:bg-gray-100 hover:text-indigo-800 rounded-md"
-              >
-                <i className="bx bx-user text-xl mr-2"></i>
-                Profile
-              </Link>
-              <button
-                onClick={handleLogout}
-                className="flex items-center px-4 py-2 text-gray-700 hover:bg-gray-100 hover:text-red-600 rounded-md"
-              >
-                <i className="bx bx-power-off text-xl mr-2"></i>
-                Logout
-              </button>
+             
+             
             </div>
           )}
         </div>

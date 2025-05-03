@@ -12,7 +12,7 @@ import {
 } from 'react-icons/hi';
 
 const Profile = () => {
-  const { user, logout } = useAuth();
+  const { user, logoutUser } = useAuth();
   const navigate = useNavigate();
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -30,10 +30,13 @@ const Profile = () => {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [selectedTrainerBooking, setSelectedTrainerBooking] = useState(null);
   const [feedbackData, setFeedbackData] = useState({
+    trainerId: '',
     rating: 0,
-    review: ''
+    review: '',
   });
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [cancellingBookingId, setCancellingBookingId] = useState(null);
+  const [trainers, setTrainers] = useState([]); // List of trainers
 
   useEffect(() => {
     const fetchData = async () => {
@@ -84,6 +87,20 @@ const Profile = () => {
     };
     
     fetchData();
+  }, []);
+
+  useEffect(() => {
+    const fetchTrainers = async () => {
+      try {
+        const response = await api.get('/trainers');
+        setTrainers(response.data);
+      } catch (error) {
+        console.error('Error fetching trainers:', error);
+        toast.error('Failed to load trainers');
+      }
+    };
+
+    fetchTrainers();
   }, []);
 
   const handlePasswordChange = (e) => {
@@ -205,52 +222,52 @@ const Profile = () => {
     }
     
     setSelectedTrainerBooking(booking);
+    setFeedbackData({
+      ...feedbackData,
+      trainerId: booking.trainer?._id || ''
+    });
     setShowFeedbackModal(true);
   };
 
   const handleFeedbackChange = (e) => {
-    setFeedbackData({
-      ...feedbackData,
-      [e.target.name]: e.target.value
-    });
+    const { name, value } = e.target;
+    setFeedbackData({ ...feedbackData, [name]: value });
   };
 
-  const handleRatingChange = (rating) => {
-    setFeedbackData({
-      ...feedbackData,
-      rating
-    });
+  const handleTrainerSelect = (e) => {
+    const selectedTrainerId = e.target.value;
+    setFeedbackData({ ...feedbackData, trainerId: selectedTrainerId });
   };
 
-  const handleSubmitFeedback = async (e) => {
+  const submitFeedback = async (e) => {
     e.preventDefault();
-    
-    if (feedbackData.rating === 0) {
-      toast.error('Please select a rating');
+
+    // Validate required fields
+    if (!feedbackData.trainerId || feedbackData.rating <= 0) {
+      toast.error('Trainer and rating are required');
       return;
     }
-    
+
+    setIsSubmittingFeedback(true);
+
     try {
-      await api.post('/feedback', {
-        trainerId: selectedTrainerBooking.trainer._id,
-        bookingId: selectedTrainerBooking._id,
-        rating: feedbackData.rating,
-        review: feedbackData.review
-      });
-      
+      const response = await api.post('/feedback', feedbackData);
+      toast.success(response.data.message || 'Feedback submitted successfully');
+      setFeedbackData({ trainerId: '', rating: 0, review: '' });
+
       // Mark booking as reviewed
       const updatedBookings = trainerBookings.map(booking => 
         booking._id === selectedTrainerBooking._id ? { ...booking, reviewed: true } : booking
       );
       setTrainerBookings(updatedBookings);
-      
-      toast.success('Feedback submitted successfully');
+
       setShowFeedbackModal(false);
-      setFeedbackData({ rating: 0, review: '' });
       setSelectedTrainerBooking(null);
     } catch (error) {
       console.error('Error submitting feedback:', error);
-      toast.error('Failed to submit feedback');
+      toast.error(error.response?.data?.message || 'Failed to submit feedback');
+    } finally {
+      setIsSubmittingFeedback(false);
     }
   };
 
@@ -352,8 +369,8 @@ const Profile = () => {
             </button>
             <button 
               onClick={() => {
-                logout();
-                navigate('/');
+                logoutUser();
+                navigate('/auth/sign-in');
               }} 
               className="px-4 py-2 bg-blue-500 bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors"
             >
@@ -727,58 +744,62 @@ const Profile = () => {
               How was your session with {selectedTrainerBooking.trainer?.name}?
             </p>
             
-            <form onSubmit={handleSubmitFeedback}>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Rating</label>
-                <div className="flex gap-2">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <button
-                      key={star}
-                      type="button"
-                      onClick={() => handleRatingChange(star)}
-                      className="focus:outline-none"
-                    >
-                      {star <= feedbackData.rating ? (
-                        <HiOutlineStar className="w-8 h-8 text-yellow-500 fill-current" />
-                      ) : (
-                        <HiOutlineStar className="w-8 h-8 text-gray-300" />
-                      )}
-                    </button>
+            <form onSubmit={submitFeedback} className="space-y-4">
+              <div>
+                <label htmlFor="trainerId" className="block text-sm font-medium text-gray-700">
+                  Trainer
+                </label>
+                <select
+                  id="trainerId"
+                  name="trainerId"
+                  value={feedbackData.trainerId}
+                  onChange={handleTrainerSelect}
+                  className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  required
+                >
+                  <option value="">Select a Trainer</option>
+                  {trainers.map((trainer) => (
+                    <option key={trainer._id} value={trainer._id}>
+                      {trainer.name}
+                    </option>
                   ))}
-                </div>
+                </select>
               </div>
-              
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Review (Optional)</label>
+              <div>
+                <label htmlFor="rating" className="block text-sm font-medium text-gray-700">
+                  Rating (1-5)
+                </label>
+                <input
+                  type="number"
+                  id="rating"
+                  name="rating"
+                  value={feedbackData.rating}
+                  onChange={handleFeedbackChange}
+                  className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  min="1"
+                  max="5"
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="review" className="block text-sm font-medium text-gray-700">
+                  Review (Optional)
+                </label>
                 <textarea
+                  id="review"
                   name="review"
                   value={feedbackData.review}
                   onChange={handleFeedbackChange}
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  rows="4"
-                  placeholder="Share your experience with this trainer..."
-                ></textarea>
+                  className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
               </div>
-              
-              <div className="flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowFeedbackModal(false);
-                    setFeedbackData({ rating: 0, review: '' });
-                  }}
-                  className="px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={feedbackData.rating === 0}
-                  className="px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
-                >
-                  Submit Feedback
-                </button>
-              </div>
+              <button
+                type="submit"
+                className="w-full bg-blue-600 text-white py-2 px-4 rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                disabled={isSubmittingFeedback}
+              >
+                {isSubmittingFeedback ? 'Submitting...' : 'Submit Feedback'}
+              </button>
             </form>
           </div>
         </div>

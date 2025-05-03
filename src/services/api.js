@@ -11,7 +11,7 @@ console.log('Environment Variables Loaded:', !!import.meta.env.VITE_API_URL);
 // Create an axios instance with some default settings
 export const api = axios.create({
   baseURL: API_URL,
-  timeout: 10000, // 10 seconds
+  timeout: 30000, // Increased timeout to 30 seconds
   headers: {
     'Content-Type': 'application/json',
   }
@@ -21,16 +21,17 @@ export const api = axios.create({
 const USER_TOKEN_KEY = 'userToken';
 const ADMIN_TOKEN_KEY = 'adminToken';
 
+// Add OTP-related endpoints to the list of public endpoints
+const authEndpoints = ['/user/signin', '/user/signup', '/user/verify-otp'];
+
 // Add a request interceptor to include authentication token
 api.interceptors.request.use(
   (config) => {
     console.log('[API] Request to:', config.url);
     
-    // Skip auth for authentication endpoints
-    const authEndpoints = ['/user/signin', '/user/signup', '/admin/signin'];
-    
+    // Skip auth for public endpoints
     if (authEndpoints.some(endpoint => config.url.includes(endpoint))) {
-      console.log('[API] Not using token for auth endpoint:', config.url);
+      console.log('[API] Not using token for public endpoint:', config.url);
       return config;
     }
     
@@ -41,6 +42,8 @@ api.interceptors.request.use(
       // Admin-specific endpoints
       config.url.includes('/bookings/admin') ||
       config.url.includes('/trainers/admin') ||
+      // Feedback status updates are admin operations
+      config.url.includes('/feedback/') && config.url.includes('/status') ||
       // Booking operations from admin panel - both gym and trainer
       ((config.url.includes('/bookings/') || config.url.includes('/trainers/bookings/')) && 
        (config.url.includes('/status') || config.url.includes('/payment')));

@@ -1,67 +1,76 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../services/api';
 import { toast, ToastContainer } from 'react-toastify';
+import { useAuth } from '../../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import { 
   HiRefresh, HiSearch, HiAdjustments, HiCheck, HiX, 
-  HiClock, HiCalendar, HiUserCircle, HiCurrencyDollar,HiOutlineBookOpen,
-  HiBriefcase, HiDotsVertical, HiChevronDown, HiChevronUp, HiTrash,
+  HiClock, HiCalendar, HiUserCircle, HiCurrencyDollar, HiOutlineBookOpen,
+  HiBriefcase, HiDotsVertical, HiChevronDown, HiChevronUp, HiTrash, HiExclamationCircle,
 } from 'react-icons/hi';
-import { useAuth } from '../../contexts/AuthContext'; // Add this to import useAuth
 
 const AdminBooking = () => {
+  const navigate = useNavigate();
+  const { user, adminAuth, logoutAdmin } = useAuth();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [statusUpdating, setStatusUpdating] = useState(null);
-  const { user, adminAuth } = useAuth(); // Add this to access auth context
-  
+
   // Filtering
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('createdAt');
   const [sortOrder, setSortOrder] = useState('desc');
-  
+
+  // Check auth status when component mounts
+  useEffect(() => {
+    console.log('AdminBooking: Admin auth state:', adminAuth);
+
+    if (!adminAuth.loading && !adminAuth.isAuthenticated) {
+      console.error('Admin not authenticated, redirecting to login');
+      toast.error('Please sign in as admin to access this page');
+      navigate('/admin/sign-in');
+    }
+  }, [adminAuth, navigate]);
+
   const fetchBookings = async () => {
     try {
       setLoading(true);
       setError(null);
-      
-      // Check admin auth state first
-      if (!adminAuth.isAuthenticated) {
+
+      if (!adminAuth || !adminAuth.isAuthenticated) {
         console.error('Admin not authenticated');
         setError('Admin authentication required. Please log in again.');
         toast.error('Authentication required');
         return;
       }
-      
-      // Get fresh admin token from localStorage
+
       const adminToken = localStorage.getItem('adminToken');
       if (!adminToken) {
         console.error('No admin token found in localStorage');
         setError('Admin token not found. Please log in again.');
         toast.error('Authentication token missing');
+        logoutAdmin();
         return;
       }
-      
+
       console.log('Admin token found, length:', adminToken.length);
-      
-      // Make the request with explicit admin token
+
       const response = await api.get('/bookings/admin', {
         headers: {
           'Authorization': `Bearer ${adminToken}`
         }
       });
-      
+
       console.log('Fetched gym bookings:', response.data.length || 0, 'bookings');
-      
-      // Process bookings to ensure consistent formatting
+
       const processedBookings = response.data.map(booking => {
-        // Ensure user data is correctly formatted
         const userName = booking.user?.name || booking.user?.username || 'Unknown User';
         const userEmail = booking.user?.email || 'No email';
         const userPhone = booking.user?.phoneNumber || booking.user?.phone || 'No phone';
-        
+
         return {
           ...booking,
           user: {
@@ -72,24 +81,19 @@ const AdminBooking = () => {
           }
         };
       });
-      
+
       setBookings(processedBookings);
     } catch (error) {
       console.error('Error fetching bookings:', error);
-      
+
       if (error.response?.status === 403) {
-        // Handle 403 error specifically
         console.error('Admin access denied. Current auth state:', adminAuth);
         setError('Access denied. Admin privileges required. Please login again with an admin account.');
         toast.error('Access denied. Admin privileges required.');
-        
-        // Clear invalid admin token
+
         localStorage.removeItem('adminToken');
-        
-        // Refresh page after a short delay or redirect to admin login
-        setTimeout(() => {
-          window.location.href = '/admin/sign-in';
-        }, 3000);
+        localStorage.removeItem('adminData');
+        logoutAdmin();
       } else {
         setError('Failed to load bookings. Please try again.');
         toast.error('Error fetching bookings');
@@ -98,19 +102,18 @@ const AdminBooking = () => {
       setLoading(false);
     }
   };
-  
+
   useEffect(() => {
-    fetchBookings();
-  }, []);
-  
-  // Filter and sort bookings
+    if (adminAuth.isAuthenticated) {
+      fetchBookings();
+    }
+  }, [adminAuth.isAuthenticated]);
+
   const filteredBookings = bookings.filter(booking => {
-    // Status filter
     if (statusFilter !== 'all' && booking.status !== statusFilter) {
       return false;
     }
-    
-    // Search filter
+
     const searchLower = searchQuery.toLowerCase();
     if (searchQuery && !(
       booking.user?.name?.toLowerCase().includes(searchLower) ||
@@ -120,14 +123,12 @@ const AdminBooking = () => {
     )) {
       return false;
     }
-    
+
     return true;
   }).sort((a, b) => {
-    // Sort logic
     let valA = a[sortBy];
     let valB = b[sortBy];
-    
-    // Handle nested fields
+
     if (sortBy === 'user.name') {
       valA = a.user?.name;
       valB = b.user?.name;
@@ -138,42 +139,36 @@ const AdminBooking = () => {
       valA = a.payment?.status;
       valB = b.payment?.status;
     }
-    
-    // Default sort for undefined values
+
     if (valA === undefined) return sortOrder === 'asc' ? -1 : 1;
     if (valB === undefined) return sortOrder === 'asc' ? 1 : -1;
-    
-    // Dates need special comparison
+
     if (sortBy === 'createdAt' || sortBy === 'bookingDate') {
       return sortOrder === 'asc' 
         ? new Date(valA) - new Date(valB)
         : new Date(valB) - new Date(valA);
     }
-    
-    // String comparison
+
     if (typeof valA === 'string' && typeof valB === 'string') {
       return sortOrder === 'asc'
         ? valA.localeCompare(valB)
         : valB.localeCompare(valA);
     }
-    
-    // Number comparison
+
     return sortOrder === 'asc' ? valA - valB : valB - valA;
   });
-  
+
   const handleStatusChange = async (id, status) => {
     try {
       setStatusUpdating(id);
-      
-      // Make sure we're using admin token for this request
+
       const adminToken = localStorage.getItem('adminToken');
       if (!adminToken) {
         console.warn('No admin token found when trying to update booking status');
         toast.error('Admin authentication required');
         return;
       }
-      
-      // Use a direct configuration with the token to ensure it's used
+
       const response = await api.patch(`/bookings/${id}/status`, 
         { status },
         { 
@@ -182,12 +177,12 @@ const AdminBooking = () => {
           } 
         }
       );
-      
+
       if (response.data.success) {
         setBookings(bookings.map(booking => 
           booking._id === id ? { ...booking, status } : booking
         ));
-        
+
         toast.success(`Booking status updated to ${status}`);
       } else {
         throw new Error(response.data.message || 'Failed to update status');
@@ -199,12 +194,12 @@ const AdminBooking = () => {
       setStatusUpdating(null);
     }
   };
-  
+
   const handlePaymentStatusChange = async (id, status) => {
     try {
       setStatusUpdating(id);
       await api.patch(`/bookings/${id}/payment`, { status });
-      
+
       setBookings(bookings.map(booking => 
         booking._id === id ? { 
           ...booking, 
@@ -212,7 +207,7 @@ const AdminBooking = () => {
           status: status === 'completed' ? 'confirmed' : booking.status
         } : booking
       ));
-      
+
       toast.success(`Payment status updated to ${status}`);
     } catch (error) {
       console.error('Error updating payment status:', error);
@@ -221,30 +216,27 @@ const AdminBooking = () => {
       setStatusUpdating(null);
     }
   };
-  
-  // Add delete booking function
+
   const handleDeleteBooking = async (id) => {
     if (!window.confirm('Are you sure you want to delete this booking?')) {
       return;
     }
-    
+
     try {
       setStatusUpdating(id);
-      
-      // Ensure admin is authenticated
+
       const adminToken = localStorage.getItem('adminToken');
       if (!adminToken) {
         toast.error('Admin authentication required');
         return;
       }
-      
+
       await api.delete(`/bookings/${id}`, {
         headers: {
           'Authorization': `Bearer ${adminToken}`
         }
       });
-      
-      // Remove booking from the list
+
       setBookings(bookings.filter(booking => booking._id !== id));
       toast.success('Booking deleted successfully');
     } catch (error) {
@@ -254,30 +246,27 @@ const AdminBooking = () => {
       setStatusUpdating(null);
     }
   };
-  
-  // Add bulk delete function for cancelled bookings
+
   const handleDeleteAllCancelled = async () => {
     if (!window.confirm('Are you sure you want to delete ALL cancelled bookings?')) {
       return;
     }
-    
+
     try {
       setLoading(true);
-      
-      // Ensure admin is authenticated
+
       const adminToken = localStorage.getItem('adminToken');
       if (!adminToken) {
         toast.error('Admin authentication required');
         return;
       }
-      
+
       const response = await api.delete('/bookings/cancelled/all', {
         headers: {
           'Authorization': `Bearer ${adminToken}`
         }
       });
-      
-      // Refresh the bookings list
+
       await fetchBookings();
       toast.success(`${response.data.deletedCount || 'All'} cancelled bookings deleted`);
     } catch (error) {
@@ -287,39 +276,36 @@ const AdminBooking = () => {
       setLoading(false);
     }
   };
-  
+
   const toggleExpand = (id) => {
     setExpandedId(expandedId === id ? null : id);
   };
-  
+
   const handleSort = (field) => {
-    // If clicking on the current sort field, toggle order
     if (sortBy === field) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
-      // Otherwise, set new sort field and default to desc
       setSortBy(field);
       setSortOrder('desc');
     }
   };
-  
+
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     const options = { year: 'numeric', month: 'short', day: 'numeric' };
     return new Date(dateString).toLocaleDateString(undefined, options);
   };
-  
+
   const formatTime = (timeString) => {
     if (!timeString) return '';
     return timeString;
   };
-  
-  // Status badge component
+
   const StatusBadge = ({ status }) => {
     let bgColor = '';
     let textColor = '';
     let icon = null;
-    
+
     switch (status) {
       case 'confirmed':
         bgColor = 'bg-green-100';
@@ -341,7 +327,7 @@ const AdminBooking = () => {
         textColor = 'text-yellow-800';
         icon = <HiClock className="w-4 h-4" />;
     }
-    
+
     return (
       <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${bgColor} ${textColor}`}>
         {icon}
@@ -349,12 +335,11 @@ const AdminBooking = () => {
       </span>
     );
   };
-  
-  // Payment status badge
+
   const PaymentBadge = ({ status, method }) => {
     let bgColor = '';
     let textColor = '';
-    
+
     switch (status) {
       case 'completed':
         bgColor = 'bg-green-100';
@@ -368,7 +353,7 @@ const AdminBooking = () => {
         bgColor = 'bg-yellow-100';
         textColor = 'text-yellow-800';
     }
-    
+
     return (
       <div className="flex flex-col">
         <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${bgColor} ${textColor}`}>
@@ -380,7 +365,25 @@ const AdminBooking = () => {
       </div>
     );
   };
-  
+
+  if (!adminAuth.isAuthenticated && !loading) {
+    return (
+      <div className="flex flex-col items-center justify-center p-10 min-h-screen">
+        <div className="text-center p-6 bg-red-50 rounded-lg shadow-sm mb-4">
+          <HiExclamationCircle className="text-red-500 text-4xl mx-auto mb-2" />
+          <h2 className="text-xl font-bold mb-2">Authentication Required</h2>
+          <p>You must be logged in as an admin to view this page.</p>
+          <button 
+            onClick={() => navigate('/admin/sign-in')}
+            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-md"
+          >
+            Go to Admin Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (loading && !bookings.length) {
     return (
       <div className="p-8 flex justify-center">
@@ -416,7 +419,6 @@ const AdminBooking = () => {
         </div>
       </div>
       
-      {/* Filtering and Search */}
       <div className="bg-white shadow-md rounded-lg p-4 mb-6">
         <div className="flex flex-col md:flex-row gap-4 justify-between">
           <div className="flex-grow">
@@ -454,7 +456,6 @@ const AdminBooking = () => {
                 value={sortBy}
                 onChange={(e) => {
                   setSortBy(e.target.value);
-                  // Reset sort order to desc when changing fields
                   setSortOrder('desc');
                 }}
                 className="p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
@@ -481,7 +482,6 @@ const AdminBooking = () => {
         </div>
       </div>
       
-      {/* Error message */}
       {error && (
         <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-6">
           <div className="flex">
@@ -492,7 +492,6 @@ const AdminBooking = () => {
         </div>
       )}
       
-      {/* Bookings table */}
       <div className="bg-white shadow-md rounded-lg overflow-hidden">
         {filteredBookings.length === 0 ? (
           <div className="p-8 text-center">
@@ -581,7 +580,6 @@ const AdminBooking = () => {
                       </td>
                     </tr>
                     
-                    {/* Expanded details row */}
                     {expandedId === booking._id && (
                       <tr className="bg-gray-50">
                         <td colSpan={6} className="px-6 py-4 text-sm">
@@ -607,7 +605,6 @@ const AdminBooking = () => {
                           </div>
                           
                           <div className="flex flex-wrap gap-2 justify-end pt-4 border-t border-gray-200">
-                            {/* Status update buttons */}
                             {(booking.status !== 'cancelled') && (
                               <>
                                 {booking.status !== 'confirmed' && (
@@ -642,7 +639,6 @@ const AdminBooking = () => {
                               </>
                             )}
                             
-                            {/* Payment update buttons */}
                             {booking.payment?.status === 'pending' && (
                               <button
                                 onClick={() => handlePaymentStatusChange(booking._id, 'completed')}
@@ -653,7 +649,6 @@ const AdminBooking = () => {
                               </button>
                             )}
                             
-                            {/* Delete button - always available for admin */}
                             <button
                               onClick={() => handleDeleteBooking(booking._id)}
                               disabled={statusUpdating === booking._id}
@@ -673,7 +668,6 @@ const AdminBooking = () => {
         )}
       </div>
       
-      {/* Showing count of bookings */}
       <div className="mt-4 text-sm text-gray-500">
         Showing {filteredBookings.length} of {bookings.length} bookings
       </div>

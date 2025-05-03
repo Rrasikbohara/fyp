@@ -1,10 +1,10 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import { HiOutlineChartBar, HiOutlineBookOpen, HiOutlineUserGroup, HiOutlineCollection, HiOutlineOfficeBuilding, HiOutlineUser, HiOutlineSearch, HiOutlineLogout } from 'react-icons/hi';
 import { useAuth } from '../../contexts/AuthContext';
 
 const AdminSidebar = ({ collapsed, onLinkClick }) => {
-  const { adminLogout } = useAuth();
+
 
   return (
     <aside className={`flex flex-col ${collapsed ? 'items-center' : 'pl-4'} space-y-4 h-full`}>
@@ -33,11 +33,7 @@ const AdminSidebar = ({ collapsed, onLinkClick }) => {
         }>
           <HiOutlineUser className="mr-2 w-5 h-5" /> Users
         </NavLink>
-        <NavLink to="/admin/equipments" onClick={onLinkClick} className={({ isActive }) => 
-          `flex items-center p-3 rounded-lg transition-colors ${isActive ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`
-        }>
-          <HiOutlineOfficeBuilding className="mr-2 w-5 h-5" /> Equipments
-        </NavLink>
+       
         <NavLink to="/admin/trainers" onClick={onLinkClick} className={({ isActive }) => 
           `flex items-center p-3 rounded-lg transition-colors ${isActive ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`
         }>
@@ -49,8 +45,8 @@ const AdminSidebar = ({ collapsed, onLinkClick }) => {
           <HiOutlineOfficeBuilding className="mr-2 w-5 h-5" /> Feedback
         </NavLink>
       </nav>
-      <button onClick={adminLogout} className="flex items-center p-3 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">
-        <HiOutlineLogout className="mr-2 w-5 h-5" /> Logout
+      <button  className="flex items-center p-4 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">
+       <Link to="/auth/sign-in"><HiOutlineLogout className="mr-2 w-5 h-5" /> Logout</Link> 
       </button>
     </aside>
   );

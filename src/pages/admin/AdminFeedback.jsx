@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../services/api';
 import { toast, ToastContainer } from 'react-toastify';
 import { 
-  HiStar, HiTrash, HiUser, HiRefresh, HiSearch, HiCheck, HiX
+  HiStar, HiTrash, HiUser, HiRefresh, HiSearch, HiCheck, HiX, HiClock,
+  HiDotsVertical
 } from 'react-icons/hi';
 
 const AdminFeedback = () => {
@@ -13,7 +14,15 @@ const AdminFeedback = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [ratingFilter, setRatingFilter] = useState('all');
   const [expandedId, setExpandedId] = useState(null);
-  
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const [processingId, setProcessingId] = useState(null);
+
+  useEffect(() => {
+    const handleClickOutside = () => setOpenMenuId(null);
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
   const fetchFeedback = async () => {
     try {
       setLoading(true);
@@ -38,9 +47,9 @@ const AdminFeedback = () => {
   
   const handleStatusChange = async (id, status) => {
     try {
+      setProcessingId(id);
       await api.patch(`/feedback/${id}/status`, { status });
       
-      // Update local state
       setFeedback(feedback.map(item => 
         item._id === id ? { ...item, status } : item
       ));
@@ -49,6 +58,9 @@ const AdminFeedback = () => {
     } catch (error) {
       console.error('Error updating feedback status:', error);
       toast.error('Failed to update feedback status');
+    } finally {
+      setProcessingId(null);
+      setOpenMenuId(null);
     }
   };
   
@@ -58,31 +70,35 @@ const AdminFeedback = () => {
     }
     
     try {
+      setProcessingId(id);
       await api.delete(`/feedback/${id}`);
       
-      // Update local state
       setFeedback(feedback.filter(item => item._id !== id));
       
       toast.success('Feedback deleted successfully');
     } catch (error) {
       console.error('Error deleting feedback:', error);
       toast.error('Failed to delete feedback');
+    } finally {
+      setProcessingId(null);
+      setOpenMenuId(null);
     }
   };
   
-  // Filter feedback based on search query and filters
+  const toggleDropdown = (e, id) => {
+    e.stopPropagation();
+    setOpenMenuId(openMenuId === id ? null : id);
+  };
+
   const filteredFeedback = feedback.filter(item => {
-    // Status filter
     if (statusFilter !== 'all' && item.status !== statusFilter) {
       return false;
     }
     
-    // Rating filter
     if (ratingFilter !== 'all' && item.rating !== parseInt(ratingFilter)) {
       return false;
     }
     
-    // Search filter
     if (searchQuery && !(
       item.user?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.trainer?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -94,7 +110,6 @@ const AdminFeedback = () => {
     return true;
   });
   
-  // Star rating display
   const StarRating = ({ rating }) => {
     return (
       <div className="flex items-center">
@@ -109,7 +124,6 @@ const AdminFeedback = () => {
     );
   };
   
-  // Status badge component
   const StatusBadge = ({ status }) => {
     switch (status) {
       case 'published':
@@ -155,6 +169,7 @@ const AdminFeedback = () => {
           <button 
             onClick={fetchFeedback}
             className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"
+            disabled={loading}
           >
             <HiRefresh className={loading ? "animate-spin" : ""} />
             Refresh
@@ -162,7 +177,6 @@ const AdminFeedback = () => {
         </div>
       </div>
       
-      {/* Filtering and Search */}
       <div className="bg-white shadow-md rounded-lg p-4 mb-6">
         <div className="flex flex-col md:flex-row gap-4 justify-between">
           <div className="flex-grow">
@@ -212,7 +226,6 @@ const AdminFeedback = () => {
         </div>
       </div>
       
-      {/* Error message */}
       {error && (
         <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-6">
           <div className="flex">
@@ -223,7 +236,6 @@ const AdminFeedback = () => {
         </div>
       )}
       
-      {/* Feedback list */}
       <div className="bg-white shadow-md rounded-lg overflow-hidden">
         {filteredFeedback.length === 0 ? (
           <div className="p-8 text-center">
@@ -263,45 +275,60 @@ const AdminFeedback = () => {
                   <div className="flex items-center gap-2">
                     <StatusBadge status={item.status} />
                     
-                    <div className="flex gap-1">
-                      {/* Status actions */}
-                      <div className="dropdown relative">
-                        <button className="text-gray-500 hover:text-gray-700 p-1">
-                          ⋮
-                        </button>
-                        <div className="dropdown-menu absolute right-0 hidden bg-white shadow-lg rounded-md p-1 border border-gray-200 z-10">
+                    <div className="relative">
+                      <button 
+                        onClick={(e) => toggleDropdown(e, item._id)} 
+                        className="p-2 text-gray-500 hover:text-gray-800 rounded-full hover:bg-gray-100"
+                        disabled={processingId === item._id}
+                      >
+                        <HiDotsVertical className="w-5 h-5" />
+                      </button>
+                      
+                      {openMenuId === item._id && (
+                        <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg z-10 py-1 border border-gray-200">
                           <button 
                             onClick={() => handleStatusChange(item._id, 'published')}
-                            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded"
+                            disabled={processingId === item._id}
+                            className="flex items-center w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-green-50"
                           >
+                            <HiCheck className="mr-2 text-green-600" />
                             Publish
                           </button>
+                          
                           <button 
                             onClick={() => handleStatusChange(item._id, 'pending')}
-                            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded"
+                            disabled={processingId === item._id}
+                            className="flex items-center w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-yellow-50"
                           >
+                            <HiClock className="mr-2 text-yellow-600" />
                             Mark Pending
                           </button>
+                          
                           <button 
                             onClick={() => handleStatusChange(item._id, 'rejected')}
-                            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded"
+                            disabled={processingId === item._id}
+                            className="flex items-center w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-red-50"
                           >
+                            <HiX className="mr-2 text-red-600" />
                             Reject
                           </button>
+                          
                           <div className="border-t border-gray-200 my-1"></div>
+                          
                           <button 
                             onClick={() => handleDelete(item._id)}
-                            className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded"
+                            disabled={processingId === item._id}
+                            className="flex items-center w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
                           >
+                            <HiTrash className="mr-2" />
                             Delete
                           </button>
                         </div>
-                      </div>
+                      )}
                     </div>
                   </div>
                 </div>
                 
-                {/* Additional booking info */}
                 {item.booking && (
                   <div className="mt-2 ml-13 text-sm text-gray-500">
                     From session on {new Date(item.booking.sessionDate).toLocaleDateString()}

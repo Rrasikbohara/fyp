@@ -1,185 +1,288 @@
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api } from '../../services/api';
+import { Typography, Input, Button, Card, CardBody, CardFooter } from '@material-tailwind/react';
 import { toast, ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
-import { Input, Button, Typography } from "@material-tailwind/react";
+import { api } from '../../services/api';
+import { FiMail, FiLock, FiUser, FiSmartphone, FiKey } from 'react-icons/fi';
 
-const SignUp = () => {
+function SignUp() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    phoneNumber: '',
-    password: '',
-    confirmPassword: ''
+    name: "",
+    email: "",
+    phoneNumber: "",
+    password: "",
+    confirmPassword: ""
   });
+  const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    // Only redirect if we have valid token and user data, not just any 'user' key
-    const token = localStorage.getItem('token');
-    const userData = localStorage.getItem('userData');
-    
-    if (token && userData) {
-      try {
-        // Ensure userData is valid JSON
-        JSON.parse(userData);
-        navigate('/dashboard');
-      } catch (error) {
-        // Clean up invalid data
-        localStorage.removeItem('token');
-        localStorage.removeItem('userData');
-      }
-    }
-    
-    // Clean up legacy data if it exists
-    if (localStorage.getItem('user')) {
-      localStorage.removeItem('user');
-    }
-  }, [navigate]);
+  const [step, setStep] = useState(1); // 1: Registration, 2: OTP Verification
+  const [otp, setOtp] = useState('');
+  const [tempUserId, setTempUserId] = useState(null); // Store user ID temporarily for OTP verification
 
   const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+    setError("");
   };
 
-  const handleSubmit = async (e) => {
+  const handleVerifyOTP = async (e) => {
     e.preventDefault();
     setError('');
-
-    if (!formData.email || !formData.password || !formData.name || !formData.phoneNumber) {
-      setError("Please fill all required fields");
-      toast.error("Please fill all required fields", { position: "top-top" });
-      return;
-    }
-
-    if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
-      toast.error("Passwords do not match", { position: "top-top" });
-      return;
-    }
-
     setIsLoading(true);
 
     try {
-      console.log('Submitting registration with:', {
-        name: formData.name,
-        email: formData.email,
-        phoneNumber: formData.phoneNumber,
-        password: formData.password.substring(0, 1) + '...' // Log partial password for safety
-      });
-      
-      const response = await api.post('/user/signup', {
-        name: formData.name,
-        email: formData.email,
-        phoneNumber: formData.phoneNumber,
-        password: formData.password
-      });
-
-      console.log('Registration response:', response.data);
-      
+      const response = await api.post('/user/verify-otp', { userId: tempUserId, otp });
       if (response.data.success) {
-        toast.success('Registration successful! Redirecting to login...', {
-          position: "top-center",
-          autoClose: 2000,
-        });
-
-        // Add the user credentials to session storage for testing
-        // REMOVE IN PRODUCTION!
-        sessionStorage.setItem('last_registered_user', JSON.stringify({
-          email: formData.email,
-          password: formData.password
-        }));
-
-        setTimeout(() => {
-          navigate('/auth/sign-in');
-        }, 2000);
+        toast.success('Account verified successfully! Please sign in.');
+        setTimeout(() => navigate('/auth/sign-in'), 2000);
       } else {
-        throw new Error(response.data.message || 'Registration failed');
+        setError(response.data.message || 'Invalid OTP');
+        toast.error(response.data.message || 'Invalid OTP');
       }
     } catch (err) {
-      console.error('Registration error:', err);
-      const errorMessage = err.response?.data?.message || err.message || 'Registration failed. Please try again.';
-      setError(errorMessage);
-      toast.error(errorMessage, { position: "top-top" });
+      console.error('OTP verification error:', err);
+      setError(err.response?.data?.message || 'Failed to verify OTP');
+      toast.error(err.response?.data?.message || 'Failed to verify OTP');
     } finally {
       setIsLoading(false);
     }
   };
 
-  return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <section className="min-h-screen flex items-center justify-center p-4 bg-teal-500">
-        <ToastContainer />
-        <div className="w-full lg:w-3/5 flex flex-col items-center justify-center border shadow-2xl shadow-black rounded-xl bg-gray-100 py-4">
-          <div className="text-center">
-            <Typography variant="h2" className="font-bold mb-4">Become our Member</Typography>
-            <Typography variant="paragraph" color="blue-gray" className="text-lg font-normal">Please fill in your details to register.</Typography>
-            {error && <Typography variant="small" color="red" className="mt-2">{error}</Typography>}
-          </div>
-          <form className="mt-8 mb-2 mx-auto w-80 max-w-screen-lg lg:w-1/2" onSubmit={handleSubmit}>
-            <div className="mb-1 flex flex-col gap-6">
-              <Input
-                size="lg"
-                name="name"
-                placeholder="John Doe"
-                value={formData.name}
-                onChange={handleChange}
-                required
-              />
-              <Input
-                size="lg"
-                type="email"
-                name="email"
-                placeholder="name@mail.com"
-                value={formData.email}
-                onChange={handleChange}
-                required
-              />
+  const handleSignUp = async (e) => {
+    e.preventDefault();
+    setError('');
+    setIsLoading(true);
+
+    // Validation
+    if (formData.password !== formData.confirmPassword) {
+      setError("Passwords don't match");
+      setIsLoading(false);
+      return;
+    }
+
+    if (formData.password.length < 6) {
+      setError("Password must be at least 6 characters");
+      setIsLoading(false);
+      return;
+    }
+
+    // Phone number validation
+    if (formData.phoneNumber.length !== 10 || !/^\d+$/.test(formData.phoneNumber)) {
+      setError("Phone number must be 10 digits");
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const response = await api.post('/user/signup', {
+        name: formData.name,
+        email: formData.email,
+        phoneNumber: formData.phoneNumber,
+        password: formData.password,
+      });
+
+      if (response.data.success) {
+        setTempUserId(response.data.userId); // Store user ID for OTP verification
+        toast.info('Verification code sent to your email. Please verify your account.');
+        setStep(2); // Move to OTP verification step
+      }
+    } catch (err) {
+      console.error('Sign up error:', err);
+
+      if (err.code === 'ECONNABORTED') {
+        setError('The request took too long. Please try again.');
+        toast.error('The request timed out. Please try again.');
+      } else if (err.response?.data?.message) {
+        setError(err.response.data.message);
+        toast.error(err.response.data.message);
+      } else {
+        setError('Failed to create account. Please try again.');
+        toast.error('Failed to create account');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const renderForm = () => {
+    if (step === 1) {
+      return (
+        <form onSubmit={handleSignUp} className="flex flex-col gap-4">
+          <div>
+            <Typography variant="small" className="text-gray-700 font-medium mb-1">Full Name</Typography>
+            <div className="relative">
+              <FiUser className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
               <Input
                 type="text"
+                name="name"
+                value={formData.name}
+                onChange={handleChange}
+                placeholder="Enter your full name"
+                required
+                className="pl-10"
+                containerProps={{ className: 'min-w-full' }}
+              />
+            </div>
+          </div>
+
+          <div>
+            <Typography variant="small" className="text-gray-700 font-medium mb-1">Email</Typography>
+            <div className="relative">
+              <FiMail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+              <Input
+                type="email"
+                name="email"
+                value={formData.email}
+                onChange={handleChange}
+                placeholder="Enter your email"
+                required
+                className="pl-10"
+                containerProps={{ className: 'min-w-full' }}
+              />
+            </div>
+          </div>
+
+          <div>
+            <Typography variant="small" className="text-gray-700 font-medium mb-1">Phone Number</Typography>
+            <div className="relative">
+              <FiSmartphone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+              <Input
+                type="tel"
                 name="phoneNumber"
-                size="lg"
-                placeholder="1234567890"
                 value={formData.phoneNumber}
                 onChange={handleChange}
+                placeholder="10-digit phone number"
                 required
+                pattern="[0-9]{10}"
+                className="pl-10"
+                containerProps={{ className: 'min-w-full' }}
               />
+            </div>
+          </div>
+
+          <div>
+            <Typography variant="small" className="text-gray-700 font-medium mb-1">Password</Typography>
+            <div className="relative">
+              <FiLock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
               <Input
                 type="password"
                 name="password"
-                size="lg"
-                placeholder="********"
                 value={formData.password}
                 onChange={handleChange}
+                placeholder="Enter your password"
                 required
+                minLength={6}
+                className="pl-10"
+                containerProps={{ className: 'min-w-full' }}
               />
+            </div>
+          </div>
+
+          <div>
+            <Typography variant="small" className="text-gray-700 font-medium mb-1">Confirm Password</Typography>
+            <div className="relative">
+              <FiLock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
               <Input
                 type="password"
                 name="confirmPassword"
-                size="lg"
-                placeholder="********"
                 value={formData.confirmPassword}
                 onChange={handleChange}
+                placeholder="Confirm your password"
                 required
+                className="pl-10"
+                containerProps={{ className: 'min-w-full' }}
               />
             </div>
-            <Button type="submit" className="mt-6" fullWidth disabled={isLoading}>
-              {isLoading ? "Registering..." : "Register Now"}
-            </Button>
-            <Typography variant="paragraph" className="text-center text-blue-gray-500 font-medium mt-4">
-              Already have an account?
-              <Link to="/auth/sign-in" className="text-gray-900 ml-1">Sign in</Link>
+          </div>
+
+          <Button
+            type="submit"
+            className="flex items-center justify-center gap-2 mt-2"
+            color="blue"
+            variant="filled"
+            disabled={isLoading}
+            fullWidth
+          >
+            {isLoading ? (
+              <>
+                <span className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></span>
+                <span>Creating account...</span>
+              </>
+            ) : (
+              <span>Create Account</span>
+            )}
+          </Button>
+        </form>
+      );
+    } else if (step === 2) {
+      return (
+        <form onSubmit={handleVerifyOTP} className="flex flex-col gap-4">
+          <div>
+            <Typography variant="small" className="text-gray-700 font-medium mb-1">Verification Code</Typography>
+            <div className="relative">
+              <FiKey className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+              <Input
+                type="text"
+                name="otp"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value)}
+                placeholder="Enter the 6-digit code"
+                required
+                className="pl-10"
+                containerProps={{ className: 'min-w-full' }}
+              />
+            </div>
+          </div>
+          <Button
+            type="submit"
+            className="flex items-center justify-center gap-2 mt-2"
+            color="blue"
+            variant="filled"
+            disabled={isLoading}
+            fullWidth
+          >
+            {isLoading ? (
+              <>
+                <span className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></span>
+                <span>Verifying...</span>
+              </>
+            ) : (
+              <span>Verify Account</span>
+            )}
+          </Button>
+        </form>
+      );
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
+      <Card className="w-full max-w-md shadow-lg">
+        <CardBody className="flex flex-col gap-6 px-6 pt-8">
+          {error && (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200">
+              <Typography color="red" className="text-sm">
+                {error}
+              </Typography>
+            </div>
+          )}
+          {renderForm()}
+        </CardBody>
+        <CardFooter className="pt-0">
+          <hr className="my-4" />
+          <div className="text-center">
+            <Typography variant="small" className="text-gray-600">
+              Already have an account?{' '}
+              <Link to="/auth/sign-in" className="text-blue-600 font-medium hover:text-blue-800 transition-colors">
+                Sign In
+              </Link>
             </Typography>
-          </form>
-        </div>
-      </section>
-    </Suspense>
+          </div>
+        </CardFooter>
+      </Card>
+      <ToastContainer />
+    </div>
   );
-};
+}
 
 export default SignUp;

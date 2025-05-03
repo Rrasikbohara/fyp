@@ -217,32 +217,13 @@ const BookGym = () => {
               >
                 {workoutTypes.map((type) => (
                   <option key={type} value={type}>
-                    {type} (₹{workoutRates[type]}/hr) - Max {workoutCapacity[type]} people
+                    {type} (₹{workoutRates[type]}/hr) 
                   </option>
                 ))}
               </select>
             </div>
             
-            {/* Add info box for workout types */}
-            <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
-              <div className="flex items-start">
-                <HiInformationCircle className="text-blue-600 mt-1 mr-2 flex-shrink-0" />
-                <div>
-                  <p className="font-medium text-blue-800">About {workoutType}</p>
-                  <p className="mt-1 text-sm text-blue-700">
-                    {workoutType === 'Cardio' && 'Access to treadmills, ellipticals, and stationary bikes. Limited to 5 people per session.'}
-                    {workoutType === 'Strength' && 'Access to free weights, barbells, and machine weights. Limited to 8 people per session.'}
-                    {workoutType === 'Yoga' && 'Guided yoga sessions in our dedicated yoga studio. Limited to 12 people per session.'}
-                    {workoutType === 'HIIT' && 'High-intensity interval training equipment. Premium rate due to specialized equipment. Limited to 6 people per session.'}
-                    {workoutType === 'CrossFit' && 'Access to CrossFit equipment and WOD space. Premium rate due to specialized equipment. Limited to 6 people per session.'}
-                    {workoutType === 'General' && 'General access to the main gym floor with basic equipment. Limited to 15 people per session.'}
-                  </p>
-                  <p className="mt-2 text-sm text-blue-800 font-medium">
-                    Capacity: {workoutCapacity[workoutType]} people per session
-                  </p>
-                </div>
-              </div>
-            </div>
+           
             
             <div className="bg-gray-50 p-4 rounded-lg">
               <h3 className="text-lg font-medium text-gray-800 mb-3">Summary</h3>

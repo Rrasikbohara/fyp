@@ -37,7 +37,6 @@ const AdminUsers = lazy(() => import("./pages/admin/AdminUsers"));
 const AdminTrainers = lazy(() => import("./pages/admin/AdminTrainers"));
 const AdminFeedback = lazy(() => import("./pages/admin/AdminFeedback"));
 const AdminAddTrainer = lazy(() => import("./pages/admin/AdminAddTrainer"));
-const AdminAddEquipment = lazy(() => import("./pages/admin/AdminAddEquipment"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const App = () => {
@@ -100,7 +99,7 @@ const App = () => {
             <Route path="trainers" element={<AdminTrainers />} />
             <Route path="feedback" element={<AdminFeedback />} />
             <Route path="add-trainer" element={<AdminAddTrainer />} />
-            <Route path="equipments" element={<AdminAddEquipment />} />
+            
           </Route>
           
           {/* 404 route */}

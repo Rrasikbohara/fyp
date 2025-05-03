@@ -101,21 +101,28 @@ export const AuthProvider = ({ children }) => {
         // Separately check for admin authentication - completely independent from user auth
         const adminToken = localStorage.getItem(ADMIN_TOKEN_KEY);
         if (adminToken) {
-          console.log('Admin token found in localStorage');
+          console.log('Admin token found in localStorage:', adminToken.substring(0, 10) + '...');
           
           try {
             // Validate admin token
             const adminData = JSON.parse(localStorage.getItem(ADMIN_DATA_KEY) || '{}');
             
-            if (adminData && adminData.username) {
-              console.log('Valid admin token found');
+            if (adminData && (adminData.username || adminData.id)) {
+              console.log('Valid admin data found:', adminData.username || adminData.id);
               setAdminUser(adminData);
               setAdminAuth({
                 isAuthenticated: true,
+                admin: adminData,
+                token: adminToken,
                 loading: false
               });
+              
+              // Set this in API headers for subsequent requests
+              api.defaults.headers.common['Authorization'] = `Bearer ${adminToken}`;
+              console.log('Set admin token in API headers');
             } else {
               // Clear invalid admin data
+              console.warn('Admin data invalid:', adminData);
               localStorage.removeItem(ADMIN_TOKEN_KEY);
               localStorage.removeItem(ADMIN_DATA_KEY);
               setAdminAuth({
@@ -134,6 +141,7 @@ export const AuthProvider = ({ children }) => {
             });
           }
         } else {
+          console.log('No admin token found in localStorage');
           setAdminAuth({
             isAuthenticated: false,
             loading: false
@@ -150,7 +158,7 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   // User login function - only affects user auth
-  const login = (token, userData) => {
+  const loginUser = (token, userData) => {
     console.log('AuthContext: Login called with token and user data');
     
     if (!token || !userData) {
@@ -174,41 +182,29 @@ export const AuthProvider = ({ children }) => {
   };
 
   // Admin login function - only affects admin auth
-  const adminLogin = (admin, token) => {
+  const loginAdmin = (token, admin) => {
     console.log('Admin login in context:', admin?.username);
-    setAdminAuth({
-      isAuthenticated: true,
-      admin,
-      token
-    });
     
     // Store token with consistent naming
     if (token) localStorage.setItem('adminToken', token);
     if (admin) localStorage.setItem('adminData', JSON.stringify(admin));
     
+    // Update admin auth state
+    setAdminAuth({
+      isAuthenticated: true,
+      admin,
+      token
+    });
+    setAdminUser(admin);
+    
     // Log admin token length for debugging
     console.log('Admin token stored, length:', token?.length || 0);
+    return true;
   };
 
-  // const adminLogout = () => {
-  //   console.log('Admin logout in context');
-  //   setAdminAuth({
-  //     isAuthenticated: false,
-  //     admin: null,
-  //     token: null
-  //   });
-    
-  //   // Clear admin storage
-  //   localStorage.removeItem('adminToken');
-  //   localStorage.removeItem('adminData');
-    
-  //   // Redirect to admin login
-  //   window.location.href = '/admin/sign-in';
-  // };
-
   // User logout function - only affects user auth
-  const logout = () => {
-    console.log('AuthContext: Logout called');
+  const logoutUser = () => {
+    console.log('AuthContext: User logout called');
     
     // Clear auth data from localStorage
     localStorage.removeItem('token');
@@ -222,26 +218,41 @@ export const AuthProvider = ({ children }) => {
     setIsAuthenticated(false);
     
     console.log('AuthContext: User logged out');
+    
+    // Redirect to login page
+    navigate('/auth/sign-in');
+    return true;
   };
 
   // Admin logout function - only affects admin auth
-  const adminLogout = () => {
+  const logoutAdmin = () => {
     console.log('AuthContext: Admin logout called');
     
     // Clear admin auth data
     localStorage.removeItem('adminToken');
     localStorage.removeItem('adminData');
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+    localStorage.removeItem(ADMIN_DATA_KEY);
     
-    // Remove token from API headers
-    delete api.defaults.headers.common['Authorization'];
+    // Remove token from API headers if it was for admin
+    if (api.defaults.headers.common['Authorization']?.includes('Bearer ')) {
+      delete api.defaults.headers.common['Authorization'];
+    }
     
     // Update admin auth state
     setAdminAuth({
+      isAuthenticated: false,
       admin: null,
-      isAuthenticated: false
+      token: null,
+      loading: false
     });
+    setAdminUser(null);
     
     console.log('AuthContext: Admin logged out');
+    
+    // Redirect to admin login page
+    navigate('/admin/sign-in');
+    return true;
   };
 
   return (
@@ -249,12 +260,12 @@ export const AuthProvider = ({ children }) => {
       user,
       isAuthenticated,
       loading,
-      login,
-      logout,
+      loginUser,
+      logoutUser,
       adminUser,
       adminAuth,
-      adminLogin,
-      adminLogout
+      loginAdmin,
+      logoutAdmin
     }}>
       {children}
     </AuthContext.Provider>

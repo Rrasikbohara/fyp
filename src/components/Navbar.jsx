@@ -2,9 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { Typography, Button, Menu, MenuHandler, MenuList, MenuItem, Avatar, IconButton, Spinner } from "@material-tailwind/react";
 import { Link, useNavigate } from "react-router-dom";
 import { Bars3Icon, XMarkIcon } from "@heroicons/react/24/outline";
+import { useAuth } from '../contexts/AuthContext';
 
 const Navbar = () => {
-  const [user, setUser ] = useState(null);
+  const { user: authUser, logoutUser, adminAuth, logoutAdmin } = useAuth();
+  const [user, setUser] = useState(null);
   const [isNavOpen, setIsNavOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -23,21 +25,23 @@ const Navbar = () => {
   }, []);
 
   useEffect(() => {
-    // Check for user data when component mounts
-    const userData = localStorage.getItem('user');
+    const userData = localStorage.getItem('userData');
     if (userData) {
-      setUser (JSON.parse(userData));
+      setUser(JSON.parse(userData));
+    } else if (authUser) {
+      setUser(authUser);
     }
-  }, []);
+  }, [authUser]);
 
   const handleLogout = async () => {
     setIsLoading(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      localStorage.removeItem('user');
-      localStorage.removeItem('token');
-      setUser (null);
-      navigate('/');
+      if (adminAuth && adminAuth.isAuthenticated) {
+        await logoutAdmin();
+      } else {
+        await logoutUser();
+      }
+      setUser(null);
     } finally {
       setIsLoading(false);
     }
@@ -71,12 +75,11 @@ const Navbar = () => {
           </Typography>
 
           <img 
-            src="/src/assets/platinum-gym-logo.png" // Updated path to reference the logo
+            src="/src/assets/platinum-gym-logo.png"
             alt="Platinum Gym"
             className="h-10"
           />
 
-          {/* Mobile menu button */}
           <IconButton
             variant="text"
             className="ml-auto h-6 w-6 text-white hover:bg-transparent focus:bg-transparent active:bg-transparent lg:hidden"
@@ -90,7 +93,6 @@ const Navbar = () => {
             )}
           </IconButton>
 
-          {/* Desktop Navigation */}
           <div className="hidden lg:flex items-center gap-8">
             {!user ? (
               <>
@@ -132,7 +134,7 @@ const Navbar = () => {
                       size="sm" 
                       className="border-2 border-[#e2ff3d]" 
                     />
-                    <span>{user.name.split(" ")[0]}</span> {/* Display first name */}
+                    <span>{user.name.split(" ")[0]}</span>
                   </Button>
                 </MenuHandler>
                 <MenuList className="bg-gray-800 border border-gray-700">
@@ -158,7 +160,6 @@ const Navbar = () => {
           </div>
         </div>
 
-        {/* Mobile Navigation */}
         <div className={`lg:hidden ${isNavOpen ? "block" : "hidden"} pt-4`}>
           <div className="flex flex-col gap-4">
             {!user ? (

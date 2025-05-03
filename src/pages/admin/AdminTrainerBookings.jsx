@@ -1,20 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../services/api';
 import { toast, ToastContainer } from 'react-toastify';
-import { useAuth } from '../../contexts/AuthContext'; // Add missing auth context import
+import { useAuth } from '../../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import { 
   HiRefresh, HiSearch, HiCheck, HiX, HiClock, 
   HiCalendar, HiUserCircle, HiCurrencyDollar, 
-  HiChevronDown, HiChevronUp, HiFilter, HiTrash
+  HiChevronDown, HiChevronUp, HiFilter, HiTrash,
+  HiExclamationCircle
 } from 'react-icons/hi';
 
 const AdminTrainerBookings = () => {
-  const { adminAuth } = useAuth(); // Add auth context usage
+  const navigate = useNavigate();
+  const { adminAuth, logoutAdmin } = useAuth();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [statusUpdating, setStatusUpdating] = useState(null);
+  const [feedbacks, setFeedbacks] = useState([]);
   
   // Filtering
   const [statusFilter, setStatusFilter] = useState('all');
@@ -22,15 +26,27 @@ const AdminTrainerBookings = () => {
   const [sortBy, setSortBy] = useState('sessionDate');
   const [sortOrder, setSortOrder] = useState('desc');
   
+  // Check auth status when component mounts
+  useEffect(() => {
+    console.log('AdminTrainerBookings: Admin auth state:', adminAuth);
+    
+    // If admin auth is loaded and not authenticated, redirect to login
+    if (!adminAuth.loading && !adminAuth.isAuthenticated) {
+      console.error('Admin not authenticated, redirecting to login');
+      toast.error('Please sign in as admin to access this page');
+      navigate('/admin/sign-in');
+    }
+  }, [adminAuth, navigate]);
+  
   const fetchBookings = async () => {
     try {
       setLoading(true);
       setError(null);
       
       // Check admin auth state first
-      if (!adminAuth) {
+      if (!adminAuth || !adminAuth.isAuthenticated) {
         console.error('Admin not authenticated');
-        setError('Admin authentication required');
+        setError('Admin authentication required. Please log in again.');
         toast.error('Authentication required');
         return;
       }
@@ -38,26 +54,62 @@ const AdminTrainerBookings = () => {
       // Get admin token for auth - ensure it's retrieving the token correctly
       const adminToken = localStorage.getItem('adminToken');
       if (!adminToken) {
-        setError('Admin authentication required');
-        toast.error('Authentication required');
+        console.error('No admin token found');
+        setError('Admin token not found. Please log in again.');
+        toast.error('Authentication token missing');
+        
+        // Force logout and redirect
+        logoutAdmin();
         return;
       }
       
       console.log('Using admin token of length:', adminToken.length);
       
       // Using the correct endpoint with explicit token
-      const response = await api.get('/trainers/admin/bookings');
+      const response = await api.get('/trainers/admin/bookings', {
+        headers: {
+          'Authorization': `Bearer ${adminToken}`
+        }
+      });
       
       console.log('Fetched trainer bookings:', response.data.length || 0);
       setBookings(response.data);
     } catch (error) {
       console.error('Error fetching trainer bookings:', error);
-      setError('Failed to load bookings');
-      toast.error('Failed to load trainer bookings');
+      
+      if (error.response?.status === 403) {
+        // Handle 403 error specifically
+        console.error('Admin access denied. Current auth state:', adminAuth);
+        setError('Access denied. Admin privileges required. Please login again with an admin account.');
+        toast.error('Access denied. Admin privileges required.');
+        
+        // Clear invalid admin token and redirect
+        logoutAdmin();
+      } else {
+        setError('Failed to load bookings. Please try again.');
+        toast.error('Failed to load trainer bookings');
+      }
     } finally {
       setLoading(false);
     }
   };
+  
+  const fetchFeedbacks = async () => {
+    try {
+      const response = await api.get('/feedback');
+      setFeedbacks(response.data.feedback || []);
+    } catch (error) {
+      console.error('Error fetching feedback:', error);
+      toast.error('Failed to fetch feedback');
+    }
+  };
+
+  useEffect(() => {
+    if (adminAuth.isAuthenticated) {
+      fetchBookings();
+      fetchFeedbacks();
+    }
+  }, [adminAuth.isAuthenticated]);
   
   // Add delete booking function
   const handleDeleteBooking = async (id) => {
@@ -125,10 +177,6 @@ const AdminTrainerBookings = () => {
     }
   };
 
-  useEffect(() => {
-    fetchBookings();
-  }, []);
-  
   // Filter bookings based on search, status, etc.
   const filteredBookings = bookings.filter(booking => {
     // Status filter
@@ -323,6 +371,25 @@ const AdminTrainerBookings = () => {
     );
   };
   
+  // If not authenticated, show appropriate message
+  if (!adminAuth.isAuthenticated && !loading) {
+    return (
+      <div className="flex flex-col items-center justify-center p-10 min-h-screen">
+        <div className="text-center p-6 bg-red-50 rounded-lg shadow-sm mb-4">
+          <HiExclamationCircle className="text-red-500 text-4xl mx-auto mb-2" />
+          <h2 className="text-xl font-bold mb-2">Authentication Required</h2>
+          <p>You must be logged in as an admin to view this page.</p>
+          <button 
+            onClick={() => navigate('/admin/sign-in')}
+            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-md"
+          >
+            Go to Admin Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (loading && !bookings.length) {
     return (
       <div className="p-8 flex justify-center">
@@ -602,6 +669,33 @@ const AdminTrainerBookings = () => {
       {/* Showing count of bookings */}
       <div className="mt-4 text-sm text-gray-500">
         Showing {filteredBookings.length} of {bookings.length} trainer bookings
+      </div>
+
+      {/* Feedback section */}
+      <div className="feedback-section mt-8">
+        <h2 className="text-xl font-bold mb-4">Trainer Feedback</h2>
+        {feedbacks.length === 0 ? (
+          <p className="text-gray-500">No feedback available</p>
+        ) : (
+          <ul className="space-y-4">
+            {feedbacks.map((feedback) => (
+              <li key={feedback._id} className="p-4 border rounded-md shadow-sm">
+                <p className="text-sm text-gray-700">
+                  <strong>Trainer:</strong> {feedback.trainer?.name || 'Unknown'}
+                </p>
+                <p className="text-sm text-gray-700">
+                  <strong>User:</strong> {feedback.user?.name || 'Anonymous'}
+                </p>
+                <p className="text-sm text-gray-700">
+                  <strong>Rating:</strong> {feedback.rating}/5
+                </p>
+                <p className="text-sm text-gray-700">
+                  <strong>Review:</strong> {feedback.review || 'No review provided'}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
       
       <ToastContainer position="bottom-right" />
